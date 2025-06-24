@@ -11,6 +11,8 @@ WIKIS_DIR="$(dirname "${SCRIPT_DIR}")/wikis"
 TEMPLATE_DIR="${SCRIPT_DIR}/wiki-template"
 
 # Default values
+
+
 WIKI_NAME=""
 WIKI_DOMAIN=""
 WIKI_LANG="en"
@@ -187,6 +189,8 @@ deploy_wiki() {
     echo "Deploying wiki instance..."
     
     cd "$wiki_dir"
+    
+    # Ensure shared environment file exists
     
     # Deploy with fresh installation
     if ! "${SCRIPT_DIR}/bluespice-deploy-wiki" \

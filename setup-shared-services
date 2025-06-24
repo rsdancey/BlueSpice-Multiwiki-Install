@@ -70,11 +70,92 @@ ENVEOF
     fi
 }
 
-# Function to initialize shared directory
+# Function to initialize shared directory and environment file
 init_shared_directory() {
     if [[ ! -d "$SHARED_DIR" ]]; then
         echo "Creating shared directory..."
         mkdir -p "$SHARED_DIR"
+    fi
+    
+    # Create shared environment file if it does not exist
+    local shared_env_file="${SHARED_DIR}/.shared.env"
+    
+    if [[ ! -f "$shared_env_file" ]]; then
+        echo "Creating shared environment file..."
+        cat > "$shared_env_file" << 'ENVEOF'
+# Shared Services Configuration
+# This file contains only variables needed by shared docker-compose files
+
+# Version and Repository
+VERSION=5.1
+BLUESPICE_SERVICE_REPOSITORY=bluespice
+
+# Data Directory for Shared Services
+DATADIR=/opt/bluespice/shared
+
+# Network Configuration
+HTTP_PORT=80
+ENABLE_IPV6=true
+
+# Database Configuration (for shared services)
+DB_ROOT_USER=
+DB_ROOT_PASS=
+
+# SSL/TLS Configuration
+HTTPS_METHOD=redirect
+ENABLE_HSTS=true
+HSTS_SUBDOMAINS=true
+SSL_POLICY=Mozilla-Modern
+
+# Let's Encrypt Configuration
+ACME_CA_URI=https://acme-v02.api.letsencrypt.org/directory
+RENEWAL_INTERVAL=3600
+ADMIN_MAIL=somuser@somedomain.tld
+
+# Resource Limits
+UPLOAD_MAX_SIZE=100m
+ENVEOF
+        echo "✓ Shared environment file created: $shared_env_file"
+        
+        # Try to detect and populate database root credentials
+        echo "Detecting database credentials..."
+        
+        # Check if bluespice-database container exists and is running
+        if docker ps --format "table {{.Names}}" | grep -q "bluespice-database"; then
+            # Try to get root password from container environment
+            local db_root_pass
+            db_root_pass=$(docker exec bluespice-database env 2>/dev/null | grep "^MYSQL_ROOT_PASSWORD=" | cut -d= -f2 || true)
+            
+            if [[ -n "$db_root_pass" ]]; then
+                # Test if root user works with this password
+                if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root -p"$db_root_pass" >/dev/null 2>&1; then
+                    echo "✓ Found working root credentials, updating shared environment..."
+                    sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
+                    sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$db_root_pass/" "$shared_env_file"
+                else
+                    # Try to find an admin user that works
+                    local admin_user admin_pass
+                    admin_user=$(docker exec bluespice-database env 2>/dev/null | grep "^MYSQL_USER=" | cut -d= -f2 || true)
+                    admin_pass=$(docker exec bluespice-database env 2>/dev/null | grep "^MYSQL_PASSWORD=" | cut -d= -f2 || true)
+                    
+                    if [[ -n "$admin_user" && -n "$admin_pass" ]]; then
+                        if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u "$admin_user" -p"$admin_pass" >/dev/null 2>&1; then
+                            echo "✓ Found working admin credentials, updating shared environment..."
+                            sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=$admin_user/" "$shared_env_file"
+                            sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$admin_pass/" "$shared_env_file"
+                        else
+                            echo "⚠ Warning: Could not find working database credentials"
+                        fi
+                    else
+                        echo "⚠ Warning: Could not find database admin credentials in container"
+                    fi
+                fi
+            else
+                echo "⚠ Warning: Could not find database root password in container"
+            fi
+        else
+            echo "⚠ Warning: bluespice-database container not found or not running"
+        fi
     fi
 }
 
