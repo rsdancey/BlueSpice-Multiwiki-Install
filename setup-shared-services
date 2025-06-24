@@ -129,11 +129,27 @@ ENVEOF
                 # Test if root user works with this password
                 if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root -p"$db_root_pass" >/dev/null 2>&1; then
                     echo "✓ Found working root credentials, updating shared environment..."
-                fi
                     sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
                     sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$db_root_pass/" "$shared_env_file"
                 else
-                    echo "⚠ Warning: Could not find database root password in container"
+                    echo "⚠ Warning: Found password but it does not work, trying without password..."
+                    if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root >/dev/null 2>&1; then
+                        echo "✓ Root user works without password, updating shared environment..."
+                        sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
+                        sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=/" "$shared_env_file"
+                    else
+                        echo "✗ Warning: Could not connect to database with or without password"
+                    fi
+                fi
+            else
+                # No password found in environment, try without password
+                if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root >/dev/null 2>&1; then
+                    echo "✓ Root user works without password, updating shared environment..."
+                    sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
+                    sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=/" "$shared_env_file"
+                else
+                    echo "⚠ Warning: Could not find database root password in container and passwordless access failed"
+                fi
             fi
         else
             echo "⚠ Warning: bluespice-database container not found or not running"

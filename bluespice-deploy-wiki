@@ -11,9 +11,64 @@ WIKIS_DIR="$(dirname "${SCRIPT_DIR}")/wikis"
 
 # Default values
 WIKI_NAME=""
-WIKI_DOMAIN=""
+# WIKI_DOMAIN will be loaded from .env file
 FRESH_INSTALL="false"
 RUN_UPDATE="false"
+
+# Show help information
+show_help() {
+    cat << EOF
+BlueSpice Wiki Deployment Script
+================================
+
+This script deploys a BlueSpice wiki instance using Docker containers.
+The wiki configuration is read from the wiki's .env file.
+
+USAGE:
+    ./bluespice-deploy-wiki --wiki-name=<name> [OPTIONS]
+
+REQUIRED PARAMETERS:
+    --wiki-name=<name>     Name of the wiki to deploy
+                          Must match a directory in /core/wikis/
+                          The domain will be read from WIKI_HOST in the .env file
+
+OPTIONS:
+    --fresh-install       Perform a fresh MediaWiki installation
+                         WARNING: This will recreate the database and lose all data!
+    
+    --run-update         Run maintenance updates after deployment
+                         Useful for applying schema changes or updates
+    
+    --help, -h           Show this help message and exit
+
+EXAMPLES:
+    # Deploy existing wiki
+    ./bluespice-deploy-wiki --wiki-name=MyWiki
+    
+    # Deploy with fresh installation (destroys existing data)
+    ./bluespice-deploy-wiki --wiki-name=MyWiki --fresh-install
+    
+    # Deploy and run maintenance updates
+    ./bluespice-deploy-wiki --wiki-name=MyWiki --run-update
+    
+    # Combine fresh install and updates
+    ./bluespice-deploy-wiki --wiki-name=MyWiki --fresh-install --run-update
+
+PREREQUISITES:
+    1. Shared services must be running (run ./setup-shared-services first)
+    2. Wiki must be initialized (run ./initialize-wiki first)
+    3. Wiki directory must exist at /core/wikis/<wiki-name>/
+    4. Wiki .env file must contain WIKI_HOST variable
+
+NOTES:
+    - The script reads configuration from /core/wikis/<wiki-name>/.env
+    - Domain is automatically determined from WIKI_HOST in the .env file
+    - Fresh installation will create/recreate database and admin user
+    - The script requires Docker and docker-compose to be available
+
+EOF
+}
+
 
 # Parse command line arguments
 parse_arguments() {
@@ -23,10 +78,6 @@ parse_arguments() {
                 WIKI_NAME="${1#*=}"
                 shift
                 ;;
-            --domain=*)
-                WIKI_DOMAIN="${1#*=}"
-                shift
-                ;;
             --fresh-install)
                 FRESH_INSTALL="true"
                 shift
@@ -34,6 +85,10 @@ parse_arguments() {
             --run-update)
                 RUN_UPDATE="true"
                 shift
+                ;;
+            --help|-h)
+                show_help
+                exit 0
                 ;;
             *)
                 echo "Unknown option: $1"
@@ -50,10 +105,6 @@ validate_arguments() {
         exit 1
     fi
     
-    if [[ -z "$WIKI_DOMAIN" ]]; then
-        echo "✗ Error: Domain is required (--domain=domain.com)"
-        exit 1
-    fi
 }
 
 # Load environment from wiki directory
@@ -69,6 +120,15 @@ load_environment() {
     
     echo "✓ Environment loaded from $env_file"
     source "$env_file"
+    
+    # Set WIKI_DOMAIN from WIKI_HOST loaded from .env file
+    if [[ -n "$WIKI_HOST" ]]; then
+        WIKI_DOMAIN="$WIKI_HOST"
+    else
+        echo "✗ Error: WIKI_HOST not found in $env_file"
+        echo "Please ensure WIKI_HOST is set in the wiki environment file"
+        exit 1
+    fi
     
     # Set derived variables
     CONTAINER_PREFIX="bluespice-${WIKI_NAME}"
@@ -134,12 +194,31 @@ DROP USER IF EXISTS '${DB_USER}'@'%';
 CREATE USER '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASS}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'%';
 FLUSH PRIVILEGES;"
+    # Execute SQL commands - handle both password and no-password scenarios
+    local db_cmd_success=false
     
-    # Execute SQL commands
-    if echo "$sql_commands" | docker exec -i bluespice-database mariadb -u root -p"${DB_ROOT_PASS}"; then
+    # Try with password first if DB_ROOT_PASS is not empty
+    if [[ -n "${DB_ROOT_PASS}" ]]; then
+        if echo "$sql_commands" | docker exec -i bluespice-database mariadb -u root -p"${DB_ROOT_PASS}" >/dev/null 2>&1; then
+            echo "$sql_commands" | docker exec -i bluespice-database mariadb -u root -p"${DB_ROOT_PASS}"
+            db_cmd_success=true
+        fi
+    fi
+    
+    # If password failed or was empty, try without password
+    if [[ "$db_cmd_success" == false ]]; then
+        if echo "$sql_commands" | docker exec -i bluespice-database mariadb -u root >/dev/null 2>&1; then
+            echo "$sql_commands" | docker exec -i bluespice-database mariadb -u root
+            db_cmd_success=true
+        fi
+    fi
+    
+    # Check if database creation was successful
+    if [[ "$db_cmd_success" == true ]]; then
         echo "✓ Database and user created successfully"
     else
         echo "✗ Error: Failed to create database and user"
+        echo "✗ Error: Could not connect to database with or without password"
         exit 1
     fi
 }
