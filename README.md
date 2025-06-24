@@ -1,264 +1,390 @@
 # BlueSpice MediaWiki Multi-Wiki Installation
 
-A Docker-based deployment system for BlueSpice MediaWiki with support for multiple wiki instances and shared services.
+A Docker-based deployment system for BlueSpice MediaWiki with support for multiple wiki instances and shared services infrastructure.
 
 ## Overview
 
 This project provides a complete containerized environment for running BlueSpice MediaWiki installations with:
 
-- Multiple independent wiki instances
-- Shared services (database, proxy, SSL certificates)
-- Automated deployment and configuration
-- Data persistence and backup capabilities
+- **Multiple independent wiki instances** - Deploy and manage multiple wikis
+- **Shared services architecture** - Database, proxy, SSL certificates, and caching
+- **Automated deployment** - Interactive setup wizards and configuration management
+- **SSL/TLS automation** - Let's Encrypt certificate management
+- **Data persistence** - Reliable storage for wiki content and configurations
 
 ## Prerequisites
 
-- Docker and Docker Compose
-- Git
-- Domain name with DNS configured
-- Email account for SMTP (optional but recommended)
+- **Docker** and **Docker Compose** (recent versions)
+- **Git** for repository management
+- **Domain name** with DNS properly configured to point to your server
+- **Email account** for SMTP notifications (optional but recommended)
+- **Linux server** with sufficient resources (2GB+ RAM recommended)
 
 ## Quick Start
 
-### 1. Initial Setup
+### 1. Clone and Setup
 
 ```bash
-# Clone and navigate to the repository
+# Clone the repository
 git clone <repository-url>
 cd core_install
 
-# Set up shared services (database, proxy, SSL)
-./bluespice-shared-services start
-
-# Initialize and deploy your first wiki
-./bluespice-deploy-wiki
+# Make scripts executable
+chmod +x *.sh setup-shared-services bluespice-* initialize-wiki
 ```
 
-### 2. Environment Configuration
+### 2. Initialize Shared Services
 
-The system uses environment files for configuration:
+```bash
+# Set up shared infrastructure (database, proxy, SSL)
+./setup-shared-services
+```
 
-- `.global.env` - Global settings shared across all services
-- `shared/.shared.env` - Shared services configuration
-- Individual wiki `.env` files in the wikis directory
+This will:
+- Create shared services configuration
+- Set up Docker networking
+- Deploy database, cache, proxy, and SSL services
+- Create the shared environment file with database credentials
 
-### 3. Wiki Deployment
+### 3. Deploy Your First Wiki
 
-The `bluespice-deploy-wiki` script will:
-- Prompt for wiki configuration (name, domain, admin credentials)
-- Generate necessary configuration files
-- Deploy the wiki container
-- Configure SSL certificates
-- Set up email (if configured)
+```bash
+# Interactive wiki setup wizard
+./initialize-wiki
+```
 
-## Directory Structure
+The wizard will prompt for:
+- Wiki name (alphanumeric, dots, dashes, underscores)
+- Domain name (e.g., wiki.example.com)
+- Language preference
+- SSL certificate setup (recommended)
+
+## Architecture
+
+### System Components
 
 ```
-.
-├── bluespice-deploy-wiki       # Main wiki deployment script
-├── bluespice-shared-services   # Shared services management script
-├── initialize-wiki             # Wiki initialization script
-├── setup-shared-services       # Shared services setup script
-├── .global.env                 # Global environment configuration
-├── shared/                     # Shared services configuration
-│   ├── .shared.env
-│   ├── docker-compose.*.yml
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Wiki Instance │    │   Wiki Instance │    │   Wiki Instance │
+│   (Container)   │    │   (Container)   │    │   (Container)   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+┌────────────────────────────────────────────────────────────────┐
+│                    Shared Services Layer                       │
+├─────────────────┬─────────────────┬─────────────────┬─────────┤
+│   Database      │   Proxy/SSL     │   Cache (Redis) │  Other  │
+│  (MariaDB)      │ (nginx/certbot) │                 │         │
+└─────────────────┴─────────────────┴─────────────────┴─────────┘
+```
+
+### Directory Structure
+
+```
+core_install/
+├── initialize-wiki              # Interactive wiki setup wizard
+├── setup-shared-services        # Shared services initialization
+├── bluespice-deploy-wiki        # Wiki deployment engine
+├── bluespice-shared-services    # Shared services management
+├── .global.env                  # Global configuration
+├── .gitignore                   # Git ignore rules
+├── shared/                      # Shared services configuration
+│   ├── .shared.env             # Shared database & SSL config
+│   ├── docker-compose.*.yml    # Service definitions
 │   └── ...
-├── wiki-template/              # Template files for new wikis
-│   ├── .env.template
-│   ├── docker-compose.*.yml
+├── wiki-template/               # Template files for new wikis
+│   ├── .env.template           # Wiki configuration template
+│   ├── docker-compose.*.yml    # Wiki service templates
 │   └── ...
-└── wikis/                      # Individual wiki instances (created during deployment)
-    └── <wiki-name>/
-        ├── .env
-        ├── docker-compose.yml
-        └── data/
+└── wikis/                       # Individual wiki instances (auto-created)
+    ├── <wiki-name>/
+    │   ├── .env                # Wiki-specific configuration
+    │   ├── docker-compose.yml  # Wiki services
+    │   └── data/               # Wiki data persistence
+    └── ...
 ```
 
-## Configuration
+## Configuration Files
 
-### Global Settings (.global.env)
+### Global Environment (.global.env)
 
+Contains system-wide settings:
 ```env
-# Network configuration
-NETWORK_NAME=bluespice-network
-
-# Domain and SSL
-DOMAIN_SUFFIX=yourdomain.com
+VERSION=5.1
+EDITION=free
 LETSENCRYPT_EMAIL=admin@yourdomain.com
-
-# Database settings
-DB_ROOT_PASSWORD=<secure-password>
-DB_NAME=bluespice_wikis
-DB_USER=wiki_user
-DB_PASSWORD=<secure-password>
-
-# Email settings (optional)
-SMTP_HOST=smtp.yourmailprovider.com
-SMTP_PORT=587
-SMTP_USER=wiki@yourdomain.com
-SMTP_PASS=<smtp-password>
 ```
 
-### Per-Wiki Settings
+### Shared Environment (shared/.shared.env)
 
-Each wiki can override global settings in its own `.env` file:
+**Auto-created** by `setup-shared-services` with:
+- Database root credentials (auto-detected)
+- SSL/TLS configuration
+- Let's Encrypt settings
+- Resource limits
 
-```env
-WIKI_NAME=mywiki
-WIKI_HOST=mywiki.yourdomain.com
-WIKI_ADMIN_USER=admin
-WIKI_ADMIN_PASS=<secure-password>
-WIKI_ADMIN_EMAIL=admin@yourdomain.com
+### Per-Wiki Environment (wikis/<name>/.env)
 
-# SMTP settings (inherits from global if not specified)
-SMTP_HOST=smtp.yourmailprovider.com
-SMTP_USER=wiki@yourdomain.com
-SMTP_PASS=<app-password>
-```
+**Auto-created** by `initialize-wiki` with:
+- Wiki-specific database credentials (auto-generated)
+- Domain and SSL settings
+- SMTP configuration
+- Container settings
 
 ## Email Configuration
 
-The system supports various SMTP providers:
+The system supports SMTP email for notifications and password resets.
 
-- **Gmail**: `smtp.gmail.com:587` (requires app password)
+### Supported Providers
+
 - **Office 365**: `smtp.office365.com:587`
-- **Other providers**: Any standard SMTP server with authentication
+- **Gmail**: `smtp.gmail.com:587` (requires app password)
+- **Custom SMTP**: Any standard SMTP server
 
-To configure email:
-1. Set SMTP settings in `.global.env` or per-wiki `.env`
-2. For Gmail/Office 365, use app-specific passwords
-3. Test email functionality after deployment
+### Configuration
+
+SMTP settings can be configured per-wiki in the `.env` file:
+```env
+SMTP_HOST=smtp.office365.com
+SMTP_PORT=587
+SMTP_USER=wiki@yourdomain.com
+SMTP_PASS=your-password
+SMTP_ID_HOST=yourdomain.com
+```
 
 ## Management Commands
 
-### Shared Services
+### Shared Services Management
 
 ```bash
-# Start shared services (database, proxy, SSL)
+# Start all shared services
 ./bluespice-shared-services start
 
 # Stop shared services
 ./bluespice-shared-services stop
 
-# Restart shared services
+# Restart services
 ./bluespice-shared-services restart
 
-# View status
+# View service status
 ./bluespice-shared-services status
 
 # View logs
-./bluespice-shared-services logs
+./bluespice-shared-services logs [service-name]
 ```
 
 ### Wiki Management
 
 ```bash
-# Deploy a new wiki
-./bluespice-deploy-wiki
+# Deploy new wiki (interactive)
+./initialize-wiki
 
-# Deploy with specific name
-./bluespice-deploy-wiki --name mywiki
+# Deploy wiki with specific settings
+./bluespice-deploy-wiki --wiki-name=mywiki --domain=wiki.example.com --fresh-install
 
-# View all wikis
-docker ps | grep bluespice-wiki
-
-# Access wiki logs
-docker logs bluespice-wiki-<name>-web
+# Update existing wiki
+./bluespice-deploy-wiki --wiki-name=mywiki --domain=wiki.example.com --run-update
 ```
 
-## Data Persistence
-
-- **Database**: Stored in Docker volumes, persists across container restarts
-- **Wiki uploads**: Stored in per-wiki data directories
-- **SSL certificates**: Automatically managed by Let's Encrypt
-
-## Backup and Recovery
-
-### Database Backup
+### Container Operations
 
 ```bash
-# Create database backup
-docker exec bluespice-database mysqldump -u root -p<password> --all-databases > backup.sql
+# View all BlueSpice containers
+docker ps | grep bluespice
+
+# View wiki logs
+docker logs bluespice-<wiki-name>-wiki-web
+
+# Access wiki container
+docker exec -it bluespice-<wiki-name>-wiki-web bash
+
+# Database access
+docker exec -it bluespice-database mysql -u root -p
+```
+
+## SSL/TLS Certificates
+
+SSL certificates are automatically managed via Let's Encrypt:
+
+- **Automatic generation** for new wiki domains
+- **Automatic renewal** (checked every hour)
+- **HTTPS redirect** enabled by default
+- **Modern SSL policies** (TLS 1.2+)
+
+### SSL Certificate Management
+
+```bash
+# Check certificate status for a domain
+docker exec bluespice-letsencrypt-service \
+  openssl x509 -in /etc/nginx/certs/wiki.example.com.crt -noout -dates
+
+# Force certificate renewal
+docker exec bluespice-letsencrypt-service \
+  /app/force_renew
+```
+
+## Database Management
+
+### Database Access
+
+```bash
+# Connect to database
+docker exec -it bluespice-database mysql -u root -p
+
+# View all databases
+docker exec bluespice-database mysql -u root -p -e "SHOW DATABASES;"
+```
+
+### Backup and Restore
+
+```bash
+# Create full backup
+docker exec bluespice-database mysqldump -u root -p --all-databases > backup.sql
 
 # Restore from backup
-docker exec -i bluespice-database mysql -u root -p<password> < backup.sql
-```
+docker exec -i bluespice-database mysql -u root -p < backup.sql
 
-### Wiki Data Backup
-
-```bash
-# Backup wiki files
-tar -czf wiki-backup.tar.gz wikis/<wiki-name>/data/
-
-# Restore wiki files
-tar -xzf wiki-backup.tar.gz -C wikis/<wiki-name>/
+# Backup specific wiki database
+docker exec bluespice-database mysqldump -u root -p <wiki_name>_wiki > wiki_backup.sql
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **SSL Certificate Errors**
-   - Ensure DNS is properly configured
-   - Check Let's Encrypt rate limits
-   - Verify email address is valid
+#### 1. "Shared environment file not found"
+**Solution**: Run `./setup-shared-services` first to create shared infrastructure.
 
-2. **Database Connection Issues**
-   - Verify shared services are running
-   - Check database credentials in environment files
-   - Ensure network connectivity between containers
+#### 2. SSL Certificate Issues
+- Verify DNS points to your server
+- Check Let's Encrypt rate limits (5 certificates per domain per week)
+- Ensure email address is valid
+- Check firewall allows ports 80 and 443
 
-3. **Email Not Working**
-   - Verify SMTP credentials and settings
-   - Check if provider requires app-specific passwords
-   - Review container logs for email errors
+#### 3. Database Connection Issues
+- Verify shared services are running: `docker ps | grep bluespice`
+- Check database logs: `docker logs bluespice-database`
+- Ensure network connectivity: `docker network ls | grep bluespice`
 
-### Viewing Logs
+#### 4. Email Not Working
+- Verify SMTP credentials in wiki `.env` file
+- Test SMTP connection outside of wiki
+- Check container logs for authentication errors
+- For Gmail/Office 365, use app-specific passwords
+
+### Diagnostic Commands
+
+```bash
+# Check all BlueSpice services status
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep bluespice
+
+# View resource usage
+docker stats --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+
+# Check Docker network
+docker network inspect bluespice-network
+
+# View system logs
+journalctl -u docker --since "1 hour ago"
+```
+
+### Log Locations
 
 ```bash
 # Shared services logs
 docker-compose -f shared/docker-compose.*.yml logs
 
 # Specific service logs
-docker logs <container-name>
+docker logs bluespice-database
+docker logs bluespice-letsencrypt-service
+docker logs bluespice-proxy
 
 # Wiki logs
-docker logs bluespice-wiki-<name>-web
+docker logs bluespice-<wiki-name>-wiki-web
+docker logs bluespice-<wiki-name>-wiki-task
 ```
 
-## Security Considerations
+## Security Best Practices
 
-- Change default passwords in all environment files
-- Use strong passwords for database and admin accounts
-- Keep environment files secure and not in version control
+### Passwords and Credentials
+- Use strong, unique passwords for all accounts
+- Database passwords are auto-generated (16+ characters)
+- Store credentials securely (`.env` files are git-ignored)
+- Use app-specific passwords for email providers
+
+### Network Security
+- Configure firewall to allow only necessary ports (80, 443, 22)
+- Use HTTPS for all wiki access (auto-configured)
 - Regularly update container images
 - Monitor access logs
 
-## Development
+### Data Protection
+- Regular database backups
+- File system backups of wiki data
+- Test restore procedures
+- Monitor disk space usage
 
-### Making Changes
+## Maintenance
 
-1. Modify scripts or configuration files
-2. Test changes in development environment
-3. Commit changes to git repository
-4. Deploy to production environment
+### Regular Tasks
 
-### Adding Features
+```bash
+# Update container images (monthly)
+docker-compose pull && docker-compose up -d
 
-The system is modular and extensible:
-- Add new Docker Compose services in the `shared/` directory
-- Extend deployment scripts for additional functionality
-- Add new templates in `wiki-template/` directory
+# Clean up unused images
+docker image prune -f
 
-## Support
+# Monitor disk usage
+df -h
+docker system df
 
-For issues and questions:
-1. Check the troubleshooting section above
-2. Review Docker and container logs
-3. Consult BlueSpice MediaWiki documentation
-4. Create an issue in the project repository
+# Check SSL certificate expiry
+./check-ssl-certificates.sh  # (if available)
+```
+
+### Updates and Upgrades
+
+1. **Backup everything** before major updates
+2. **Test updates** in a staging environment first
+3. **Update container images** regularly
+4. **Monitor logs** after updates for issues
+
+## Development and Customization
+
+### Adding New Wikis
+Use the `initialize-wiki` script - it handles all configuration automatically.
+
+### Modifying Templates
+Edit files in `wiki-template/` to change default wiki configurations.
+
+### Custom Services
+Add new services to shared infrastructure by:
+1. Creating new Docker Compose files in `shared/`
+2. Updating `bluespice-shared-services` script
+3. Testing integration with existing services
+
+### Environment Customization
+- Global settings: `.global.env`
+- Shared settings: `shared/.shared.env`
+- Per-wiki settings: `wikis/<name>/.env`
+
+## Getting Help
+
+### Troubleshooting Steps
+1. **Check this README** for common solutions
+2. **Review logs** for specific error messages
+3. **Verify configuration** files are correct
+4. **Test components individually** (database, proxy, wiki)
+5. **Check Docker and system resources**
+
+### Support Resources
+- **BlueSpice Documentation**: Official MediaWiki documentation
+- **Docker Documentation**: For container-related issues
+- **Let's Encrypt Community**: For SSL certificate issues
+- **Project Repository**: For installation script issues
 
 ## License
 
-This project is provided as-is for educational and deployment purposes.
+This deployment system is provided as-is for educational and production use. Please review the licensing terms of BlueSpice MediaWiki separately.
