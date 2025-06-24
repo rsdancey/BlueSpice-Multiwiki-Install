@@ -58,3 +58,4 @@ backup_*
 !.env.template
 !.env.sample
 
+shared/.shared.env
