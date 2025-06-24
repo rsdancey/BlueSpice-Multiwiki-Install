@@ -195,7 +195,6 @@ deploy_wiki() {
     # Deploy with fresh installation
     if ! "${SCRIPT_DIR}/bluespice-deploy-wiki" \
         --wiki-name="$WIKI_NAME" \
-        --domain="$WIKI_DOMAIN" \
         --fresh-install; then
         echo "✗ Error: Wiki deployment failed"
         exit 1
@@ -248,9 +247,9 @@ show_completion_info() {
     echo "3. Configure your wiki settings"
     echo
     echo "Management commands:"
-    echo "  Start:  ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --domain=$WIKI_DOMAIN"
+    echo "  Start:  ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME"
     echo "  Stop:   docker compose -f /core/wikis/$WIKI_NAME/docker-compose.helper-service.yml -f /core/wikis/$WIKI_NAME/docker-compose.main.yml down"
-    echo "  Update: ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --domain=$WIKI_DOMAIN --run-update"
+    echo "  Update: ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --run-update"
     echo
 }
 

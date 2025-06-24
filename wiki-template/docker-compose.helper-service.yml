@@ -30,3 +30,7 @@ services:
       com.bluespice.type: "maintenance"
       com.bluespice.group: "prepare"
       com.bluespice.wiki: ${WIKI_NAME}
+
+networks:
+  bluespice-network:
+    external: true

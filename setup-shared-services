@@ -258,6 +258,21 @@ start_shared_services() {
             
             # Wait a bit more for full initialization
             echo "Waiting for services to fully initialize..."
+
+            # Ensure database is connected to shared network for multi-wiki access
+            echo "Ensuring database network connectivity..."
+            if ! docker network ls | grep -q "bluespice-network"; then
+                echo "✓ Creating shared network: bluespice-network"
+                docker network create bluespice-network 2>/dev/null || true
+            fi
+            
+            # Connect database to shared network if not already connected
+            if ! docker inspect bluespice-database | grep -q ""bluespice-network""; then
+                echo "✓ Connecting database to shared network"
+                docker network connect bluespice-network bluespice-database 2>/dev/null || true
+            else
+                echo "✓ Database already connected to shared network"
+            fi
             sleep 10
             return 0
         fi
