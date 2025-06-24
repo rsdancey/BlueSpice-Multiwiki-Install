@@ -1,0 +1,106 @@
+---
+x-common-config: &common-config
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 512M
+      reservations:
+        memory: 256M
+
+services:
+  database:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/database:${VERSION}
+    container_name: bluespice-database
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    environment:
+#      - MYSQL_DATABASE=${DB_NAME}
+#      - MYSQL_USER=${DB_USER}
+#      - MYSQL_PASSWORD=${DB_PASS}
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
+      - MYSQL_INITDB_SKIP_TZINFO=1
+      - TZ=UTC
+    volumes:
+      - type: volume
+        source: bluespice-database-data
+        target: /config/databases
+    healthcheck:
+      test: >-
+        /usr/bin/mariadb --protocol=socket -u root -p${DB_ROOT_PASS} -e "SELECT version();"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    <<: *common-config
+    labels:
+      com.bluespice.service: "database"
+      com.bluespice.type: "data"
+
+  cache:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/cache:${VERSION}
+    container_name: bluespice-cache
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    healthcheck:
+      test: >-
+        echo 'stats' | nc localhost 11211 | grep -q uptime
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    <<: *common-config
+    labels:
+      com.bluespice.service: "cache"
+      com.bluespice.type: "data"
+
+  search:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/search:${VERSION}
+    container_name: bluespice-search
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+    networks:
+      - bluespice-network
+    volumes:
+      - type: volume
+        source: bluespice-search-data
+        target: /usr/share/opensearch/data
+    healthcheck:
+      test: >-
+        curl -s -f http://localhost:9200/_cluster/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1.5G
+        reservations:
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      com.bluespice.service: "search"
+      com.bluespice.type: "data"
+
+volumes:
+  bluespice-database-data:
+  bluespice-search-data:
+
+networks:
+  bluespice-network:
+    external: true

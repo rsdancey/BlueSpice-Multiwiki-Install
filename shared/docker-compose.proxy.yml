@@ -1,0 +1,58 @@
+---
+x-common-config: &common-config
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: '1.0'
+        memory: 512M
+      reservations:
+        memory: 256M
+
+services:
+  proxy:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/proxy:${VERSION}
+    container_name: bluespice-proxy
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ${DATADIR}/proxy/vhost.d:/etc/nginx/vhost.d:rw
+      - ${DATADIR}/proxy/html:/usr/share/nginx/html:rw
+      - ${DATADIR}/proxy/certs:/etc/nginx/certs:rw
+      - /var/run/docker.sock:/tmp/docker.sock:rw
+      - ${DATADIR}/proxy/conf.d:/etc/nginx/conf.d:rw
+    environment:
+      - NGINX_PROXY_CONTAINER=proxy
+      - ENABLE_IPV6=${ENABLE_IPV6:-true}
+      - HTTPS_METHOD=${HTTPS_METHOD:-redirect}
+      - SSL_POLICY=${SSL_POLICY:-Mozilla-Modern}
+      - HSTS=${ENABLE_HSTS:-true}
+      - HSTS_INCLUDE_SUBDOMAINS=${HSTS_SUBDOMAINS:-true}
+      - CLIENT_MAX_BODY_SIZE=${UPLOAD_MAX_SIZE:-100m}
+      - DHPARAM_BITS=2048
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    <<: *common-config
+    labels:
+      com.github.nginx-proxy.nginx: "true"
+      com.bluespice.service: "proxy"
+      com.bluespice.type: "networking"
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  bluespice-network:
+    external: true
+    enable_ipv6: ${ENABLE_IPV6:-true}

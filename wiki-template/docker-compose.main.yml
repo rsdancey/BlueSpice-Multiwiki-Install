@@ -1,0 +1,70 @@
+---
+x-common-config: &common-config
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: '1.0'
+        memory: 1G
+      reservations:
+        memory: 512M
+
+services:
+  wiki-web:
+    image: ${BLUESPICE_WIKI_IMAGE}
+    container_name: ${CONTAINER_PREFIX}-wiki-web
+    restart: unless-stopped
+    entrypoint: ["/app/bin/start-web"]
+    networks:
+      - bluespice-network
+    volumes:
+      - ${DATADIR}/wiki:/data
+    environment:
+      - DB_NAME=${DB_NAME}
+      - DB_HOST=${DB_HOST}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - EDITION=${EDITION}
+      - VIRTUAL_HOST=${VIRTUAL_HOST}
+      - VIRTUAL_PORT=${VIRTUAL_PORT}
+      - WIKI_HOST=${WIKI_HOST}
+      - WIKI_PROTOCOL=https
+      - WIKI_SERVER=https://${WIKI_HOST}
+    <<: *common-config
+    labels:
+      com.bluespice.service: "wiki-web"
+      com.bluespice.type: "application"
+      com.bluespice.wiki: ${WIKI_NAME}
+
+  wiki-task:
+    image: ${BLUESPICE_WIKI_IMAGE}
+    container_name: ${CONTAINER_PREFIX}-wiki-task
+    restart: unless-stopped
+    entrypoint: ["/app/bin/start-task"]
+    command: ["--runAll"]
+    environment:
+      - DB_NAME=${DB_NAME}
+      - DB_HOST=${DB_HOST}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - EDITION=${EDITION}
+      - WIKI_HOST=${WIKI_HOST}
+      - WIKI_PROTOCOL=https
+      - WIKI_SERVER=https://${WIKI_HOST}
+    networks:
+      - bluespice-network
+    volumes:
+      - ${DATADIR}/wiki:/data
+    <<: *common-config
+    labels:
+      com.bluespice.service: "wiki-task"
+      com.bluespice.type: "application"
+      com.bluespice.wiki: ${WIKI_NAME}
+
+networks:
+  bluespice-network:
+    external: true

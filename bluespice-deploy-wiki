@@ -1,0 +1,299 @@
+#!/bin/bash
+
+# BlueSpice Wiki Deployment Script
+# Deploys and manages individual wiki instances
+
+set -euo pipefail
+
+# Script directory and paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WIKIS_DIR="$(dirname "${SCRIPT_DIR}")/wikis"
+
+# Default values
+WIKI_NAME=""
+WIKI_DOMAIN=""
+FRESH_INSTALL="false"
+RUN_UPDATE="false"
+
+# Parse command line arguments
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --wiki-name=*)
+                WIKI_NAME="${1#*=}"
+                shift
+                ;;
+            --domain=*)
+                WIKI_DOMAIN="${1#*=}"
+                shift
+                ;;
+            --fresh-install)
+                FRESH_INSTALL="true"
+                shift
+                ;;
+            --run-update)
+                RUN_UPDATE="true"
+                shift
+                ;;
+            *)
+                echo "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# Validate arguments
+validate_arguments() {
+    if [[ -z "$WIKI_NAME" ]]; then
+        echo "✗ Error: Wiki name is required (--wiki-name=name)"
+        exit 1
+    fi
+    
+    if [[ -z "$WIKI_DOMAIN" ]]; then
+        echo "✗ Error: Domain is required (--domain=domain.com)"
+        exit 1
+    fi
+}
+
+# Load environment from wiki directory
+load_environment() {
+    local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
+    local env_file="${wiki_dir}/.env"
+    
+    if [[ ! -f "$env_file" ]]; then
+        echo "✗ Error: Environment file not found: $env_file"
+        echo "Run initialize-wiki first to create the wiki structure"
+        exit 1
+    fi
+    
+    echo "✓ Environment loaded from $env_file"
+    source "$env_file"
+    
+    # Set derived variables
+    CONTAINER_PREFIX="bluespice-${WIKI_NAME}"
+    COMPOSE_DIR="$wiki_dir"
+}
+
+# Create required data directories
+create_data_directories() {
+    echo "Creating required directories..."
+    
+    local data_dir="${DATADIR}/${WIKI_NAME}"
+    
+    # Create directory structure
+    sudo mkdir -p "${data_dir}/wiki"/{database,proxy,search,wiki}
+    
+    # Set proper ownership
+    sudo chown -R 911:911 "${data_dir}/wiki/database"
+    sudo chown -R 1002:bluespice "${data_dir}/wiki/wiki"
+    sudo chown -R 1000:1000 "${data_dir}/wiki/search"
+    
+    echo "✓ Data directories created"
+}
+
+# Wait for container to be healthy
+wait_for_healthy() {
+    local container="$1"
+    local max_attempts=30
+    local attempt=1
+    
+    echo "Waiting for $container to be healthy..."
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        if docker ps --format "table {{.Names}}\t{{.Status}}" | grep "$container" | grep -q "healthy"; then
+            echo "✓ $container is healthy"
+            return 0
+        fi
+        
+        echo "Attempt $attempt/$max_attempts: $container not yet healthy, waiting..."
+        sleep 10
+        ((attempt++))
+    done
+    
+    echo "✗ Error: $container did not become healthy within timeout"
+    return 1
+}
+
+# Create database and user
+create_database_and_user() {
+    echo "Creating database and user..."
+    
+    # Load shared environment for database root credentials
+    if [[ -f "${SCRIPT_DIR}/shared/.shared.env" ]]; then
+        source "${SCRIPT_DIR}/shared/.shared.env"
+    else
+        echo "✗ Error: Shared environment file not found"
+        exit 1
+    fi
+    
+    # Create SQL commands
+    local sql_commands="
+CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+DROP USER IF EXISTS '${DB_USER}'@'%';
+CREATE USER '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASS}';
+GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'%';
+FLUSH PRIVILEGES;"
+    
+    # Execute SQL commands
+    if echo "$sql_commands" | docker exec -i bluespice-database mariadb -u root -p"${DB_ROOT_PASS}"; then
+        echo "✓ Database and user created successfully"
+    else
+        echo "✗ Error: Failed to create database and user"
+        exit 1
+    fi
+}
+
+# Generate initial admin password
+generate_admin_password() {
+    local container="${CONTAINER_PREFIX}-wiki-web"
+    
+    echo "Generating initial admin password..."
+    
+    # Generate a random password
+    local password=$(openssl rand -base64 16)
+    
+    # Write password to file inside container
+    docker exec "$container" sh -c "echo '$password' > /data/wiki/initialAdminPassword"
+    
+    echo "✓ Initial admin password generated and saved"
+    echo "  Admin user: WikiSysop"
+    echo "  Password: $password"
+    echo "  Please save this password - it will be displayed only once!"
+}
+
+# Run MediaWiki installation
+run_mediawiki_install() {
+    local container="${CONTAINER_PREFIX}-wiki-web"
+    
+    echo "Running MediaWiki installation..."
+    
+    docker exec "$container" php /app/bluespice/w/maintenance/install.php \
+        --dbname="${DB_NAME}" \
+        --dbuser="${DB_USER}" \
+        --dbpass="${DB_PASS}" \
+        --dbserver="${DB_HOST}" \
+        --passfile=/data/wiki/initialAdminPassword \
+        --server="https://${WIKI_HOST}" \
+        --scriptpath="" \
+        --lang="${WIKI_LANG}" \
+        "${WIKI_NAME}" \
+        "WikiSysop"
+    
+    echo "✓ MediaWiki installation completed"
+}
+
+# Run maintenance script
+run_maintenance_script() {
+    local container="${CONTAINER_PREFIX}-wiki-web"
+    
+    echo "Running MediaWiki maintenance script..."
+    docker exec "$container" php /app/bluespice/w/maintenance/update.php --quick
+    echo "✓ Maintenance script completed"
+}
+
+# Configure email settings
+configure_email_settings() {
+    local container="${CONTAINER_PREFIX}-wiki-web"
+    
+    echo "Configuring email settings..."
+    
+    # Email configuration using fixed values from user rules
+    docker exec "$container" php -r "
+    \$configFile = '/app/bluespice/w/LocalSettings.php';
+    \$emailConfig = \"
+// Email Configuration
+\\\$wgEnableEmail = true;
+\\\$wgEnableUserEmail = true;
+\\\$wgEmergencyContact = 'someuser@somedomain.tld';
+\\\$wgPasswordSender = 'someuser@somedomain.tld';
+\\\$wgSMTP = [
+    'host' => 'smtp.somedomain.com',
+    'IDHost' => '${WIKI_HOST}',
+    'port' => 587,
+    'username' => 'passwordsender@somedomain.tld',
+    'password' => '${SMTP_PASS}',
+    'auth' => true
+];
+\";
+    file_put_contents(\$configFile, \$emailConfig, FILE_APPEND);
+    "
+    
+    echo "✓ Email settings configured"
+}
+
+# Main deployment function
+main() {
+    parse_arguments "$@"
+    validate_arguments
+    
+    echo "BlueSpice Wiki Deployment"
+    echo "========================="
+    
+    load_environment
+    create_data_directories
+    
+    echo "Wiki Name: $WIKI_NAME"
+    echo "Domain: $WIKI_DOMAIN"
+    echo "Data Directory: ${DATADIR}/${WIKI_NAME}"
+    echo "Container Prefix: $CONTAINER_PREFIX"
+    echo
+    
+    cd "$COMPOSE_DIR"
+    
+    # Handle fresh installation
+    if [[ "$FRESH_INSTALL" == "true" ]]; then
+        echo "Performing fresh installation..."
+        
+        # Start all services
+        echo "Starting BlueSpice wiki services..."
+        docker compose -f docker-compose.helper-service.yml -f docker-compose.main.yml up -d
+        
+        # Immediately stop the task container to prevent database connection issues
+        echo "Stopping task container temporarily..."
+        docker stop "${CONTAINER_PREFIX}-wiki-task" || true
+        
+        sleep 10
+        
+        if wait_for_healthy "${CONTAINER_PREFIX}-wiki-web"; then
+            # Run installation while task container is stopped
+            create_database_and_user
+            generate_admin_password
+            run_mediawiki_install
+            run_maintenance_script
+            configure_email_settings
+            
+            # Now restart the task container
+            echo "Starting task container..."
+            docker start "${CONTAINER_PREFIX}-wiki-task"
+            
+            echo "✓ Fresh installation completed successfully"
+        else
+            echo "✗ Error: Wiki container not healthy, skipping installation"
+            exit 1
+        fi
+    else
+        # Normal startup - start all services
+        echo "Starting all BlueSpice wiki services..."
+        docker compose -f docker-compose.helper-service.yml -f docker-compose.main.yml up -d
+    fi
+    
+    # Handle updates
+    if [[ "$RUN_UPDATE" == "true" ]]; then
+        echo "Running maintenance updates..."
+        sleep 30
+        
+        if wait_for_healthy "${CONTAINER_PREFIX}-wiki-web"; then
+            run_maintenance_script
+        else
+            echo "✗ Error: Wiki container not healthy, skipping maintenance"
+            exit 1
+        fi
+    fi
+    
+    echo "✓ Wiki deployment completed successfully!"
+    echo "Access your wiki at: https://${WIKI_HOST}"
+}
+
+# Run main function
+main "$@"

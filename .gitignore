@@ -1,0 +1,60 @@
+# Environment files with sensitive data
+
+# Backup files
+*.backup
+*.bak
+*~
+
+# Log files
+*.log
+
+# Temporary files
+.tmp/
+temp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker volumes (if any get created locally)
+volumes/
+data/
+
+# Backup directories and files
+scripts_backup/
+*_backup/
+backup_*/
+
+# Additional backup patterns
+*.backup-*
+*backup-*
+backup_*
+*.old
+*_backup
+*_old
+*.broken
+*.bak
+*.tmp
+
+# Database and sensitive files
+*.sql
+*.gz
+*.dump
+
+# Environment files with credentials
+.env
+.env.*
+!.env.template
+!.env.sample
+

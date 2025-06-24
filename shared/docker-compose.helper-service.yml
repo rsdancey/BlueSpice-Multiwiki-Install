@@ -1,0 +1,30 @@
+---
+x-common-config: &common-config
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 256M
+      reservations:
+        memory: 128M
+
+services:
+  prepare:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/helper:${VERSION}
+    container_name: ${CONTAINER_PREFIX}-prepare
+    command: prepare-bluespice
+    networks:
+      - bluespice-network
+    volumes:
+      - ${DATADIR}/wiki:/data
+    <<: *common-config
+    labels:
+      com.bluespice.service: "helper"
+      com.bluespice.type: "maintenance"
+      com.bluespice.group: "prepare"
+      com.bluespice.wiki: ${WIKI_NAME}

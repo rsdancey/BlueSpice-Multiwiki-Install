@@ -1,0 +1,58 @@
+---
+x-common-config: &common-config
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 256M
+      reservations:
+        memory: 128M
+
+services:
+  letsencrypt:
+    image: nginxproxy/acme-companion:latest
+    container_name: bluespice-letsencrypt-service
+    restart: unless-stopped
+    environment:
+      - DEFAULT_EMAIL=${ADMIN_MAIL}
+      - NGINX_PROXY_CONTAINER=proxy
+      - ACME_CA_URI=${ACME_CA_URI:-https://acme-v02.api.letsencrypt.org/directory}
+      - DEBUG=1
+      - ACME_DEBUG=1
+      - NGINX_PROXY_DEBUG=1
+      - ACME_AGREE_TOS=true
+      - CERT_NAME_STRATEGY=explicit
+      - CERT_SUFFIX=.crt
+      - KEY_SUFFIX=.key
+      - CHAIN_SUFFIX=.chain.pem
+      - DHPARAM_SUFFIX=.dhparam.pem
+      - RENEWAL_INTERVAL=${RENEWAL_INTERVAL:-3600}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DATADIR}/letsencrypt:/etc/acme.sh:rw
+      - ${DATADIR}/proxy/certs:/etc/nginx/certs:rw
+      - ${DATADIR}/proxy/vhost.d:/etc/nginx/vhost.d:rw
+      - ${DATADIR}/proxy/html:/usr/share/nginx/html:rw
+      - ${DATADIR}/proxy/conf.d:/etc/nginx/conf.d:rw
+    depends_on:
+      proxy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "/app/cert_status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    <<: *common-config
+    labels:
+      com.bluespice.service: "letsencrypt"
+      com.bluespice.type: "security"
+
+networks:
+  bluespice-network:
+    external: true

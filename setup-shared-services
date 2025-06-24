@@ -1,0 +1,240 @@
+#!/bin/bash
+
+# Setup shared services configuration for BlueSpice
+# Configures Let's Encrypt email and initializes shared environment
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Configuration
+SHARED_DIR="${SCRIPT_DIR}/shared"
+GLOBAL_ENV="${SCRIPT_DIR}/.global.env"
+
+# Function to prompt for email
+prompt_email() {
+    local email=""
+    local shared_env="${SHARED_DIR}/.shared.env"
+    local existing_admin_email=""
+    
+    # Check if ADMIN_MAIL exists in .shared.env
+    if [[ -f "$shared_env" ]] && grep -q "^ADMIN_MAIL=" "$shared_env" 2>/dev/null; then
+        existing_admin_mail=$(grep "^ADMIN_MAIL=" "$shared_env" | cut -d'=' -f2)
+        read -r -p "Enter email address for Let's Encrypt (press Enter to use existing: $existing_admin_mail): " admin_mail
+    else
+        read -r -p "Enter email address for Let's Encrypt (or press Enter to skip): " admin_email
+    fi
+    
+    # If user pressed Enter and we have an existing admin mail, use it
+    if [[ -z "$email" ]] && [[ -n "$existing_admin_mail" ]]; then
+        email="$existing_admin_mail"
+        echo "Using existing admin mail: $admin_mail"
+    fi
+    
+    printf "%s" "$admin_mail"
+}
+
+# Function to update global environment
+# Function to update both global and shared environment files
+update_environment_files() {
+    local email="$1"
+    
+    # Create global env if it doesn't exist
+    if [[ ! -f "$GLOBAL_ENV" ]]; then
+        cat > "$GLOBAL_ENV" << 'ENVEOF'
+# Global BlueSpice Configuration
+VERSION=5.1
+EDITION=free
+ENVEOF
+    fi
+    
+    # Update global environment with Let's Encrypt email
+    if [[ -n "$email" ]]; then
+        if grep -q "LETSENCRYPT_EMAIL=" "$GLOBAL_ENV" 2>/dev/null; then
+            sed -i "s|LETSENCRYPT_EMAIL=.*|LETSENCRYPT_EMAIL=$email|" "$GLOBAL_ENV"
+        else
+            echo "LETSENCRYPT_EMAIL=$email" >> "$GLOBAL_ENV"
+        fi
+        echo "✓ Let's Encrypt email configured in global env: $email"
+    else
+        echo "⚠ Skipping Let's Encrypt configuration"
+    fi
+    
+    # Update shared environment with ADMIN_MAIL
+    if [[ -n "$email" ]] && [[ -f "${SHARED_DIR}/.shared.env" ]]; then
+        if grep -q "ADMIN_MAIL=" "${SHARED_DIR}/.shared.env" 2>/dev/null; then
+            sed -i "s|ADMIN_MAIL=.*|ADMIN_MAIL=$email|" "${SHARED_DIR}/.shared.env"
+        else
+            echo "ADMIN_MAIL=$email" >> "${SHARED_DIR}/.shared.env"
+        fi
+        echo "✓ Admin email configured in shared env: $email"
+    fi
+}
+
+# Function to initialize shared directory
+init_shared_directory() {
+    if [[ ! -d "$SHARED_DIR" ]]; then
+        echo "Creating shared directory..."
+        mkdir -p "$SHARED_DIR"
+    fi
+}
+
+# Function to pull required Docker images
+pull_docker_images() {
+    echo "Checking and pulling required Docker images..."
+    
+    # Source global environment to get VERSION and EDITION
+    if [[ -f "$GLOBAL_ENV" ]]; then
+        set -a  # Export all variables
+        source "$GLOBAL_ENV"
+        set +a  # Stop exporting
+    fi
+    
+    # Default values if not set in environment
+    VERSION=${VERSION:-5.1}
+    EDITION=${EDITION:-free}
+    BLUESPICE_SERVICE_REPOSITORY=${BLUESPICE_SERVICE_REPOSITORY:-bluespice}
+    
+    # List of required images
+    local images=(
+        "${BLUESPICE_SERVICE_REPOSITORY}/database:${VERSION}"
+        "${BLUESPICE_SERVICE_REPOSITORY}/cache:${VERSION}"
+        "${BLUESPICE_SERVICE_REPOSITORY}/search:${VERSION}"
+        "${BLUESPICE_SERVICE_REPOSITORY}/proxy:${VERSION}"
+        "${BLUESPICE_SERVICE_REPOSITORY}/pdf:${VERSION}"
+        "${BLUESPICE_SERVICE_REPOSITORY}/formula:${VERSION}"
+        "${BLUESPICE_SERVICE_REPOSITORY}/diagram:${VERSION}"
+        "nginxproxy/acme-companion:latest"
+    )
+    
+    # Check and pull each image
+    for image in "${images[@]}"; do
+        echo "Checking image: $image"
+        if ! docker image inspect "$image" >/dev/null 2>&1; then
+            echo "Pulling image: $image"
+            if ! docker pull "$image"; then
+                echo "⚠ Warning: Failed to pull $image - continuing anyway"
+            else
+                echo "✓ Successfully pulled: $image"
+            fi
+        else
+            echo "✓ Image already available: $image"
+        fi
+    done
+    
+    echo "✓ Docker image check complete"
+}
+
+# Function to create Docker network with improved error handling
+create_docker_network() {
+    echo "Setting up Docker network..."
+    
+    # Check if network already exists
+    if docker network ls --format "{{.Name}}" | grep -q "^bluespice-network$"; then
+        echo "✓ Docker network 'bluespice-network' already exists"
+        return 0
+    fi
+    
+    # Try to create the network
+    echo "Creating Docker network 'bluespice-network'..."
+    if docker network create bluespice-network 2>/dev/null; then
+        echo "✓ Docker network created successfully"
+    else
+        # Network creation failed - check if it was created by another process
+        if docker network ls --format "{{.Name}}" | grep -q "^bluespice-network$"; then
+            echo "✓ Docker network 'bluespice-network' exists (created by another process)"
+            return 0
+        else
+            echo "✗ Error: Failed to create Docker network 'bluespice-network'"
+            exit 1
+        fi
+    fi
+}
+
+# Function to start shared services
+start_shared_services() {
+    echo "Starting shared services..."
+
+    # Check if database service is already running
+    if docker ps --format "{{.Names}}" | grep -q "^bluespice-database$"; then
+        echo "✓ Shared services already running"
+        return 0
+    fi
+    
+    echo "Launching shared services containers..."
+    if "${SCRIPT_DIR}/bluespice-shared-services" up -d; then
+        echo "✓ Shared services containers launched"
+    else
+        echo "✗ Error: Failed to start shared services"
+        exit 1
+    fi
+
+    # Wait for services to be ready
+    echo "Waiting for services to become healthy..."
+    local attempts=0
+    local max_attempts=30
+    
+    while [[ $attempts -lt $max_attempts ]]; do
+        if docker ps --format "{{.Names}}" | grep -q "^bluespice-database$"; then
+            echo "✓ Database service is running"
+            
+            # Wait a bit more for full initialization
+            echo "Waiting for services to fully initialize..."
+            sleep 10
+            return 0
+        fi
+        echo ""
+        echo "Waiting for services to start (can take 3-4 attempts)... (attempt $((attempts + 1))/$max_attempts)"
+        sleep 10
+        ((attempts++))
+    done
+
+    echo "✗ Error: Shared services failed to start within expected time"
+    echo "Check service status with: docker ps -a"
+    exit 1
+}
+
+# Function to deploy shared services
+deploy_shared_services() {
+    echo "Deploying shared services infrastructure..."
+
+    # Pull required Docker images
+    pull_docker_images
+    
+    # Create Docker network with improved error handling
+    create_docker_network
+
+    # Start the shared services
+    start_shared_services
+
+    echo "✓ Shared services deployment complete"
+}
+
+# Main execution
+main() {
+    echo "BlueSpice Shared Services Setup"
+    echo "==============================="
+    echo
+    
+    # Get email for Let's Encrypt
+    local email
+    email=$(prompt_email)
+    
+    # Update configuration
+    echo "Setting up BlueSpice shared services..."
+    update_environment_files "$email"
+    
+    # Initialize shared services
+    init_shared_directory
+    
+    # Deploy services
+    deploy_shared_services
+    
+    echo
+    echo "✓ Shared services setup complete!"
+    echo
+    echo "Services should be accessible shortly."
+    echo "Use 'docker ps' to check service status."
+}
+
+# Run main function
+main "$@"
