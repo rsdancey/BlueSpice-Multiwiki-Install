@@ -151,7 +151,8 @@ generate_admin_password() {
     echo "Generating initial admin password..."
     
     # Generate a random password
-    local password=$(openssl rand -base64 16)
+    local password
+    password=$(openssl rand -base64 16)
     
     # Write password to file inside container
     docker exec "$container" sh -c "echo '$password' > /data/wiki/initialAdminPassword"

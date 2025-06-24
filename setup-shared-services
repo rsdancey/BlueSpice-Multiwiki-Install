@@ -14,23 +14,22 @@ GLOBAL_ENV="${SCRIPT_DIR}/.global.env"
 prompt_email() {
     local email=""
     local shared_env="${SHARED_DIR}/.shared.env"
-    local existing_admin_email=""
     
     # Check if ADMIN_MAIL exists in .shared.env
     if [[ -f "$shared_env" ]] && grep -q "^ADMIN_MAIL=" "$shared_env" 2>/dev/null; then
-        existing_admin_mail=$(grep "^ADMIN_MAIL=" "$shared_env" | cut -d'=' -f2)
-        read -r -p "Enter email address for Let's Encrypt (press Enter to use existing: $existing_admin_mail): " admin_mail
+        existing_email=$(grep "^ADMIN_MAIL=" "$shared_env" | cut -d'=' -f2)
+        read -r -p "Enter email address for Let's Encrypt (press Enter to use existing: $existing_email): " email
     else
-        read -r -p "Enter email address for Let's Encrypt (or press Enter to skip): " admin_email
+        read -r -p "Enter email address for Let's Encrypt (or press Enter to skip): " email
     fi
     
     # If user pressed Enter and we have an existing admin mail, use it
-    if [[ -z "$email" ]] && [[ -n "$existing_admin_mail" ]]; then
-        email="$existing_admin_mail"
-        echo "Using existing admin mail: $admin_mail"
+    if [[ -z "$email" ]] && [[ -n "$existing_email" ]]; then
+        email="$existing_email"
+        echo "Using existing admin mail: $email"
     fi
     
-    printf "%s" "$admin_mail"
+    printf "%s" "$email"
 }
 
 # Function to update global environment
@@ -130,28 +129,11 @@ ENVEOF
                 # Test if root user works with this password
                 if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root -p"$db_root_pass" >/dev/null 2>&1; then
                     echo "✓ Found working root credentials, updating shared environment..."
+                fi
                     sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
                     sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$db_root_pass/" "$shared_env_file"
                 else
-                    # Try to find an admin user that works
-                    local admin_user admin_pass
-                    admin_user=$(docker exec bluespice-database env 2>/dev/null | grep "^MYSQL_USER=" | cut -d= -f2 || true)
-                    admin_pass=$(docker exec bluespice-database env 2>/dev/null | grep "^MYSQL_PASSWORD=" | cut -d= -f2 || true)
-                    
-                    if [[ -n "$admin_user" && -n "$admin_pass" ]]; then
-                        if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u "$admin_user" -p"$admin_pass" >/dev/null 2>&1; then
-                            echo "✓ Found working admin credentials, updating shared environment..."
-                            sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=$admin_user/" "$shared_env_file"
-                            sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$admin_pass/" "$shared_env_file"
-                        else
-                            echo "⚠ Warning: Could not find working database credentials"
-                        fi
-                    else
-                        echo "⚠ Warning: Could not find database admin credentials in container"
-                    fi
-                fi
-            else
-                echo "⚠ Warning: Could not find database root password in container"
+                    echo "⚠ Warning: Could not find database root password in container"
             fi
         else
             echo "⚠ Warning: bluespice-database container not found or not running"
