@@ -59,3 +59,4 @@ backup_*
 !.env.sample
 
 shared/.shared.env
+.global.env
