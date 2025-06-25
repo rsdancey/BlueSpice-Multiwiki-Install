@@ -10,6 +10,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKIS_DIR="$(dirname "${SCRIPT_DIR}")/wikis"
 
 # Default values
+UPGRADE_ACTION="sleep 1"
+KERBEROS="false"
+EDITION="${EDITION:-free}"
 WIKI_NAME=""
 # WIKI_DOMAIN will be loaded from .env file
 FRESH_INSTALL="false"
@@ -39,6 +42,33 @@ OPTIONS:
     --run-update         Run maintenance updates after deployment
                          Useful for applying schema changes or updates
     
+    --profile=upgrade     Run upgrade pipeline after deployment
+                         Uses /app/bin/upgrade-pipeline command
+    
+    --profile=upgrade-force  Run upgrade pipeline with force flag
+                         Uses /app/bin/upgrade-pipeline -f command
+    
+    --enable-kerberos    Enable Kerberos authentication proxy
+                         Requires kerberos configuration files
+                ;;
+            --profile=upgrade)
+                UPGRADE_ACTION="/app/bin/upgrade-pipeline"
+                shift
+                ;;
+            --profile=upgrade-force)
+                UPGRADE_ACTION="/app/bin/upgrade-pipeline -f"
+                shift
+                ;;
+            --enable-kerberos)
+                KERBEROS="true"
+                shift
+                ;;
+            --profile=*)
+                echo "Unknown profile ${1#*=}"
+                exit 1
+                ;;
+                         Useful for applying schema changes or updates
+    
     --help, -h           Show this help message and exit
 
 EXAMPLES:
@@ -50,9 +80,43 @@ EXAMPLES:
     
     # Deploy and run maintenance updates
     ./bluespice-deploy-wiki --wiki-name=MyWiki --run-update
+                ;;
+            --profile=upgrade)
+                UPGRADE_ACTION="/app/bin/upgrade-pipeline"
+                shift
+                ;;
+            --profile=upgrade-force)
+                UPGRADE_ACTION="/app/bin/upgrade-pipeline -f"
+                shift
+                ;;
+            --enable-kerberos)
+                KERBEROS="true"
+                shift
+                ;;
+            --profile=*)
+                echo "Unknown profile ${1#*=}"
+                exit 1
+                ;;
     
     # Combine fresh install and updates
     ./bluespice-deploy-wiki --wiki-name=MyWiki --fresh-install --run-update
+                ;;
+            --profile=upgrade)
+                UPGRADE_ACTION="/app/bin/upgrade-pipeline"
+                shift
+                ;;
+            --profile=upgrade-force)
+                UPGRADE_ACTION="/app/bin/upgrade-pipeline -f"
+                shift
+                ;;
+            --enable-kerberos)
+                KERBEROS="true"
+                shift
+                ;;
+            --profile=*)
+                echo "Unknown profile ${1#*=}"
+                exit 1
+                ;;
 
 PREREQUISITES:
     1. Shared services must be running (run ./setup-shared-services first)
@@ -83,8 +147,22 @@ parse_arguments() {
                 shift
                 ;;
             --run-update)
-                RUN_UPDATE="true"
+                ;;
+            --profile=upgrade)
+                UPGRADE_ACTION="/app/bin/upgrade-pipeline"
                 shift
+                ;;
+            --profile=upgrade-force)
+                UPGRADE_ACTION="/app/bin/upgrade-pipeline -f"
+                shift
+                ;;
+            --enable-kerberos)
+                KERBEROS="true"
+                shift
+                ;;
+            --profile=*)
+                echo "Unknown profile ${1#*=}"
+                exit 1
                 ;;
             --help|-h)
                 show_help
@@ -186,7 +264,7 @@ create_database_and_user() {
     fi
     
     # Ensure database is connected to shared network
-    if ! docker inspect bluespice-database | grep -q ""bluespice-network""; then
+    if ! docker inspect bluespice-database | grep -q "bluespice-network"; then
         echo "✓ Connecting database to shared network"
         docker network connect bluespice-network bluespice-database 2>/dev/null || true
     fi
@@ -326,14 +404,34 @@ main() {
     echo
     
     cd "$COMPOSE_DIR"
+
+    # Build compose file list based on options
+    COMPOSE_FILES="-f docker-compose.helper-service.yml -f docker-compose.main.yml"
+    
+    # Add collabpads for pro/farm editions
+    if [[ "$EDITION" == "pro" || "$EDITION" == "farm" ]]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.collabpads-service.yml"
+    fi
+    
+    # Add kerberos proxy if enabled
+    if [[ "$KERBEROS" == "true" ]]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.kerberos-proxy.yml"
+    fi
+    
+    export UPGRADE_ACTION
     
     # Handle fresh installation
     if [[ "$FRESH_INSTALL" == "true" ]]; then
         echo "Performing fresh installation..."
         
+        # Run prepare service first to initialize data structure
+        echo "Running prepare service to initialize data structure..."
+        docker compose -f docker-compose.helper-service.yml run --rm prepare
+        
         # Start all services
         echo "Starting BlueSpice wiki services..."
-        docker compose -f docker-compose.helper-service.yml -f docker-compose.main.yml up -d
+        # shellcheck disable=SC2086
+        docker compose $COMPOSE_FILES up -d
         
         # Immediately stop the task container to prevent database connection issues
         echo "Stopping task container temporarily..."
@@ -360,8 +458,12 @@ main() {
         fi
     else
         # Normal startup - start all services
+        echo "Running prepare service to ensure data structure is initialized..."
+        docker compose -f docker-compose.helper-service.yml run --rm prepare
+        
         echo "Starting all BlueSpice wiki services..."
-        docker compose -f docker-compose.helper-service.yml -f docker-compose.main.yml up -d
+        # shellcheck disable=SC2086
+        docker compose $COMPOSE_FILES up -d
     fi
     
     # Handle updates

@@ -1,0 +1,67 @@
+---
+x-common-config: &common-config
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 256M
+      reservations:
+        memory: 128M
+
+services:
+  formula:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/formula:${VERSION}
+    container_name: bluespice-formula
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    healthcheck:
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    <<: *common-config
+    labels:
+      com.bluespice.service: "formula"
+      com.bluespice.type: "stateless"
+
+  pdf:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/pdf:${VERSION}
+    container_name: bluespice-pdf
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    healthcheck:
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    <<: *common-config
+    labels:
+      com.bluespice.service: "pdf"
+      com.bluespice.type: "stateless"
+
+  diagram:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/diagram:${VERSION}
+    container_name: bluespice-diagram
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    healthcheck:
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    <<: *common-config
+    labels:
+      com.bluespice.service: "diagram"
+      com.bluespice.type: "stateless"
+
+networks:
+  bluespice-network:
+    external: true

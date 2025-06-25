@@ -1,0 +1,57 @@
+---
+x-common-config: &common-config
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 256M
+      reservations:
+        memory: 128M
+
+services:
+  proxy:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/proxy:${VERSION}
+    container_name: ${CONTAINER_PREFIX}-proxy
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ${DATADIR}/${WIKI_NAME}/proxy/vhost.d:/etc/nginx/vhost.d
+      - ${DATADIR}/${WIKI_NAME}/proxy/html:/usr/share/nginx/html
+      - ${DATADIR}/${WIKI_NAME}/proxy/certs:/etc/nginx/certs:rw
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    labels:
+      - com.github.nginx-proxy.nginx=true
+      - com.bluespice.service=proxy
+      - com.bluespice.type=infrastructure
+      - com.bluespice.wiki=${WIKI_NAME}
+    <<: *common-config
+
+  kerberos-proxy:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/kerberos-proxy:${VERSION}
+    container_name: ${CONTAINER_PREFIX}-kerberos-proxy
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    volumes:
+      - ${DATADIR}/${WIKI_NAME}/kerberos/krb5.conf:/etc/krb5.conf
+      - ${DATADIR}/${WIKI_NAME}/kerberos/kerberos.keytab:/etc/kerberos.keytab
+    environment:
+      - VIRTUAL_HOST=${WIKI_HOST}
+    labels:
+      - com.bluespice.service=kerberos-proxy
+      - com.bluespice.type=authentication
+      - com.bluespice.wiki=${WIKI_NAME}
+    <<: *common-config
+
+networks:
+  bluespice-network:
+    external: true

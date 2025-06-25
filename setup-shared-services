@@ -117,6 +117,7 @@ ENVEOF
         echo "✓ Shared environment file created: $shared_env_file"
 
         # Generate and set database root password for new installation
+        # shellcheck disable=SC2155
         local db_root_pass=$(openssl rand -base64 16)
         sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
         sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$db_root_pass/" "$shared_env_file"
@@ -188,6 +189,10 @@ pull_docker_images() {
         "${BLUESPICE_SERVICE_REPOSITORY}/pdf:${VERSION}"
         "${BLUESPICE_SERVICE_REPOSITORY}/formula:${VERSION}"
         "${BLUESPICE_SERVICE_REPOSITORY}/diagram:${VERSION}"
+        "${BLUESPICE_SERVICE_REPOSITORY}/collabpads:${VERSION}"
+        "${BLUESPICE_SERVICE_REPOSITORY}/kerberos-proxy:${VERSION}"
+        "${BLUESPICE_SERVICE_REPOSITORY}/helper:${VERSION}"
+        "mongo:8.0"
         "nginxproxy/acme-companion:latest"
     )
     
@@ -319,6 +324,7 @@ monitor_service_health() {
         
         # Display current status for all services
         for service in "${services[@]}"; do
+            # shellcheck disable=SC2155
             local status=$(get_container_status "$service")
             display_service_status "$service" "$status"
             

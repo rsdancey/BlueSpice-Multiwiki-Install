@@ -137,6 +137,7 @@ monitor_services_startup() {
         
         # Display current status for all services
         for service in "${services[@]}"; do
+            # shellcheck disable=SC2155
             local status=$(get_container_status "$service")
             display_service_status "$service" "$status"
             
@@ -205,14 +206,14 @@ execute_docker_compose() {
     
     if [[ "$suppress_output" == "true" ]]; then
         # Suppress all docker compose output except errors, but capture exit code
-        if docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" $command >/dev/null 2>&1; then
+        if docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" "$command" >/dev/null 2>&1; then
             return 0
         else
             return 1
         fi
     else
         # Show output (for debugging)
-        docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" $command
+        docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" "$command"
     fi
 }
 
@@ -235,7 +236,8 @@ show_services_status() {
     echo
     
     for service in "${services[@]}"; do
-        local status=$(get_container_status "$service")
+        # shellcheck disable=SC2155
+            local status=$(get_container_status "$service")
         display_service_status "$service" "$status"
     done
     echo

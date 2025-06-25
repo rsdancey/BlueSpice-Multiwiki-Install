@@ -21,7 +21,7 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATADIR}/wiki:/data
+      - ${DATADIR}/${WIKI_NAME}:/data
     environment:
       - DB_NAME=${WIKI_NAME}
     <<: *common-config
@@ -29,6 +29,33 @@ services:
       com.bluespice.service: "helper"
       com.bluespice.type: "maintenance"
       com.bluespice.group: "prepare"
+      com.bluespice.wiki: ${WIKI_NAME}
+
+  upgrade:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/helper:${VERSION}
+    container_name: ${CONTAINER_PREFIX}-upgrade
+    command: ${UPGRADE_ACTION:-sleep 1}
+    networks:
+      - bluespice-network
+    volumes:
+      - ${DATADIR}/${WIKI_NAME}:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - VERSION=${VERSION}
+      - EDITION=${EDITION}
+      - DATADIR=${DATADIR}
+      - WIKI_NAME=${WIKI_NAME}
+      - WIKI_LANG=${WIKI_LANG:-en}
+      - WIKI_HOST=${WIKI_HOST}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_HOST=${DB_HOST}
+      - DB_NAME=${DB_NAME}
+    <<: *common-config
+    labels:
+      com.bluespice.service: "upgrade"
+      com.bluespice.type: "maintenance"
+      com.bluespice.group: "upgrade"
       com.bluespice.wiki: ${WIKI_NAME}
 
 networks:
