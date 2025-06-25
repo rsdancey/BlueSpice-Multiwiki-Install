@@ -22,7 +22,7 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATADIR}/wiki:/data/bluespice
+      - ${DATA_DIR}/wiki:/data/bluespice
     environment:
       - DB_NAME=${DB_NAME}
       - DB_HOST=${DB_HOST}
@@ -58,7 +58,7 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATADIR}/wiki:/data/bluespice
+      - ${DATA_DIR}/wiki:/data/bluespice
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-task"

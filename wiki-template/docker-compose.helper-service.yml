@@ -21,7 +21,7 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATADIR}/wiki:/data
+      - ${DATA_DIR}/wiki:/data
     environment:
       - DB_NAME=${WIKI_NAME}
     <<: *common-config

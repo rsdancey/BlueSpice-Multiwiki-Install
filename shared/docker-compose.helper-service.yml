@@ -21,7 +21,7 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATADIR}/wiki:/data
+      - ${DATA_DIR}/wiki:/data
     <<: *common-config
     labels:
       com.bluespice.service: "helper"

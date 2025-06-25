@@ -190,7 +190,7 @@ main() {
     
     # Get wiki name with proper directory checking
     while [[ -z "$WIKI_NAME" ]]; do
-        read -r -p "Enter wiki name (alphanumeric, dots, dashes, underscores, no spaces): " WIKI_NAME
+        printf "Enter wiki name (alphanumeric, dots, dashes, underscores, no spaces): "; read -r WIKI_NAME
         if [[ ! "$WIKI_NAME" =~ ^[a-zA-Z0-9._-]+$ ]]; then
             echo "Error: Wiki name must be alphanumeric, dots, dashes, underscores with no spaces" >&2
             WIKI_NAME=""
@@ -199,7 +199,7 @@ main() {
             echo "Warning: Wiki directory '${WIKIS_DIR}/${WIKI_NAME}' already exists"
             echo "This may contain data from a previous installation."
             echo
-            read -r -p "Remove existing directory and continue? [y/N]: " confirm
+            printf "Remove existing directory and continue? [y/N]: "; read -r confirm
             if [[ "$confirm" =~ ^[Yy]$ ]]; then
                 echo "Removing existing directory..."
                 if rm -rf "${WIKIS_DIR:?}/${WIKI_NAME:?}"; then
@@ -218,7 +218,7 @@ main() {
     
     # Get wiki domain
     while [[ -z "$WIKI_DOMAIN" ]]; do
-        read -r -p "Enter wiki domain (e.g., wiki.example.com): " WIKI_DOMAIN
+        printf "Enter wiki domain (e.g., wiki.example.com): "; read -r WIKI_DOMAIN
         if [[ ! "$WIKI_DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
             echo "Error: Please enter a valid domain name" >&2
             WIKI_DOMAIN=""
@@ -227,7 +227,7 @@ main() {
     
     # Get wiki language
     echo "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh"
-    read -r -p "Enter wiki language code [en]: " WIKI_LANG
+    printf "Enter wiki language code [en]: "; read -r WIKI_LANG
     WIKI_LANG="${WIKI_LANG:-en}"
     
     # Get setup mode
@@ -239,7 +239,7 @@ main() {
     
     local choice=""
     while [[ ! "$choice" =~ ^[1-3]$ ]]; do
-        read -r -p "Choose option [1/2/3]: " choice
+        printf "Choose option [1/2/3]: "; read -r choice
     done
     
     case $choice in
@@ -257,7 +257,7 @@ main() {
     echo "  Setup Mode: $SETUP_MODE"
     echo
     
-    read -r -p "Proceed with this configuration? [y/N]: " confirm
+    printf "Proceed with this configuration? [y/N]: "; read -r confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         echo "Setup cancelled."
         exit 0
