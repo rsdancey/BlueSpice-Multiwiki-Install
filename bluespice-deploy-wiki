@@ -257,7 +257,7 @@ generate_admin_password() {
     password=$(openssl rand -base64 16)
     
     # Write password to file inside container
-    docker exec "$container" sh -c "echo '$password' > /data/wiki/initialAdminPassword"
+    docker exec "$container" sh -c "echo '$password' > /data/bluespice/initialAdminPassword"
     
     echo "✓ Initial admin password generated and saved"
     echo "  Admin user: WikiSysop"
@@ -276,7 +276,7 @@ run_mediawiki_install() {
         --dbuser="${DB_USER}" \
         --dbpass="${DB_PASS}" \
         --dbserver="${DB_HOST}" \
-        --passfile=/data/wiki/initialAdminPassword \
+        --passfile=/data/bluespice/initialAdminPassword \
         --server="https://${WIKI_HOST}" \
         --scriptpath="" \
         --lang="${WIKI_LANG}" \
