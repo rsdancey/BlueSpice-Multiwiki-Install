@@ -65,52 +65,6 @@ setup_ssl_certificate() {
     return 1
 }
 
-# User input functions
-prompt_wiki_name() {
-    local name=""
-    while [[ -z "$name" ]]; do
-        read -r -p "Enter wiki name (alphanumeric, dots, dashes, underscores, no spaces): " name
-        if [[ ! "$name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-            echo "Error: Wiki name must be alphanumeric, dots, dashes, underscores with no spaces" >&2
-            name=""
-        elif [[ -d "${WIKIS_DIR}/${name}" ]]; then
-            echo
-            echo "Warning: Wiki directory '${WIKIS_DIR}/${name}' already exists"
-            echo "This may contain data from a previous installation."
-            echo
-            read -r -p "Remove existing directory and continue? [y/N]: " confirm
-            if [[ "$confirm" =~ ^[Yy]$ ]]; then
-                echo "Removing existing directory..."
-                if rm -rf "${WIKIS_DIR:?}/${name:?}"; then
-                    echo "Existing directory removed"
-                else
-                    echo "Error: Failed to remove existing directory" >&2
-                    echo "Setup cancelled." >&2
-                    exit 1
-                fi
-            else
-                echo "Setup cancelled by user."
-                exit 0
-            fi
-        fi
-    done
-    echo "$name"
-}
-
-prompt_wiki_domain() {
-    local domain=""
-    while [[ -z "$domain" ]]; do
-        read -r -p "Enter wiki domain (e.g., wiki.example.com): " domain
-        if [[ ! "$domain" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-            echo "Error: Please enter a valid domain name" >&2
-            domain=""
-        fi
-    done
-    echo "$domain"
-}
-
-
-
 # Environment file creation
 create_environment_file() {
     local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
@@ -234,12 +188,49 @@ main() {
     echo "======================================"
     echo
     
-    # Collect user input
-    WIKI_NAME=$(prompt_wiki_name)
-    WIKI_DOMAIN=$(prompt_wiki_domain)
+    # Get wiki name with proper directory checking
+    while [[ -z "$WIKI_NAME" ]]; do
+        read -r -p "Enter wiki name (alphanumeric, dots, dashes, underscores, no spaces): " WIKI_NAME
+        if [[ ! "$WIKI_NAME" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "Error: Wiki name must be alphanumeric, dots, dashes, underscores with no spaces" >&2
+            WIKI_NAME=""
+        elif [[ -d "${WIKIS_DIR}/${WIKI_NAME}" ]]; then
+            echo
+            echo "Warning: Wiki directory '${WIKIS_DIR}/${WIKI_NAME}' already exists"
+            echo "This may contain data from a previous installation."
+            echo
+            read -r -p "Remove existing directory and continue? [y/N]: " confirm
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                echo "Removing existing directory..."
+                if rm -rf "${WIKIS_DIR:?}/${WIKI_NAME:?}"; then
+                    echo "Existing directory removed"
+                else
+                    echo "Error: Failed to remove existing directory" >&2
+                    echo "Setup cancelled." >&2
+                    exit 1
+                fi
+            else
+                echo "Setup cancelled by user."
+                exit 0
+            fi
+        fi
+    done
+    
+    # Get wiki domain
+    while [[ -z "$WIKI_DOMAIN" ]]; do
+        read -r -p "Enter wiki domain (e.g., wiki.example.com): " WIKI_DOMAIN
+        if [[ ! "$WIKI_DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            echo "Error: Please enter a valid domain name" >&2
+            WIKI_DOMAIN=""
+        fi
+    done
+    
+    # Get wiki language
     echo "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh"
     read -r -p "Enter wiki language code [en]: " WIKI_LANG
     WIKI_LANG="${WIKI_LANG:-en}"
+    
+    # Get setup mode
     echo
     echo "Setup options:"
     echo "1) New wiki with SSL certificate"
@@ -257,6 +248,7 @@ main() {
         3) SETUP_MODE="restore" ;;
     esac
     
+    # Show configuration summary
     echo
     echo "Configuration Summary:"
     echo "  Wiki Name: $WIKI_NAME"
