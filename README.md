@@ -11,9 +11,6 @@ This system provides a robust, production-ready environment for running multiple
 - **🏗️ Multi-Wiki Architecture**: Deploy unlimited independent wiki instances
 - **⚡ Shared Infrastructure**: Centralized database, proxy, SSL, and caching services
 - **🔒 Automated SSL/TLS**: Let's Encrypt integration with automatic certificate renewal
-- **🎯 Interactive Setup**: User-friendly configuration wizards
-- **📊 Smart Database Management**: Automatic credential detection and configuration
-- **💾 Data Persistence**: Reliable storage with Docker volumes
 - **📧 Email Integration**: Built-in SMTP configuration support
 
 ## 📋 Prerequisites
@@ -44,10 +41,10 @@ Set up the foundational infrastructure:
 ```
 
 This script will:
-- ✅ Configure Let's Encrypt email for SSL certificates
-- ✅ Set up shared Docker network and services
-- ✅ Auto-detect and configure database credentials
-- ✅ Create shared environment configuration
+- Configure Let's Encrypt email for SSL certificates
+- Set up shared Docker network and services
+- Auto-detect and configure database credentials
+- Create shared environment configuration
 
 ### 3. Create Your First Wiki
 Launch the interactive wiki creation wizard:
@@ -64,8 +61,10 @@ You'll be prompted for:
 ### 4. Deploy Your Wiki
 Deploy the configured wiki instance:
 ```bash
-./bluespice-deploy-wiki --wiki-name=<your-wiki-name>
+./bluespice-deploy-wiki --wiki-name=<your-wiki-name> --fresh-install
 ```
+
+**Important**: The deployment script reads all configuration (including domain) from the wiki's `.env` file located at `/core/wikis/<wiki-name>/.env`.
 
 ## 🔧 Advanced Usage
 
@@ -73,6 +72,7 @@ Deploy the configured wiki instance:
 
 | Flag | Description | Use Case |
 |------|-------------|----------|
+| `--wiki-name=<name>` | **Required**: Name of wiki to deploy | All deployments |
 | `--fresh-install` | ⚠️ Destroys existing data and performs clean install | New wiki setup |
 | `--run-update` | Executes maintenance updates after deployment | Software updates |
 | `--help` | Display detailed usage information | Reference |
@@ -137,7 +137,7 @@ DB_USER=mywiki_user                 # Database user
 DB_PASS=secure_password             # Database password
 
 # Email Configuration (SMTP)
-SMTP_HOST=smtp.office365.com        # SMTP server
+SMTP_HOST=smtp.somedomain.tld       # SMTP server
 SMTP_PORT=587                       # SMTP port
 SMTP_USER=wiki@company.com          # SMTP username
 SMTP_PASS=email_password            # SMTP password
@@ -262,20 +262,6 @@ cp -r /core/wikis/<wiki-name>/.env /backup/location/
 3. Restore configuration files
 4. Redeploy wiki instance
 
-## 📈 Scaling and Performance
-
-### Multi-Wiki Management
-- Each wiki operates independently
-- Shared resources reduce overhead
-- Individual scaling per wiki
-- Isolated update cycles
-
-### Performance Optimization
-- Enable caching services
-- Optimize database settings
-- Monitor resource usage
-- Scale shared services as needed
-
 ## 🤝 Contributing
 
 We welcome contributions! Please follow these steps:
@@ -284,13 +270,15 @@ We welcome contributions! Please follow these steps:
 2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
 3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
 4. **Test** thoroughly in a development environment
-5. **Push** to the branch (`git push origin feature/amazing-feature`)
-6. **Open** a Pull Request
+5. **Lint** your scripts with shellcheck
+6. **Push** to the branch (`git push origin feature/amazing-feature`)
+7. **Open** a Pull Request
 
 ### Development Guidelines
 - Follow existing code style and patterns
 - Include documentation for new features
 - Test changes with multiple wiki configurations
+- Run shellcheck on all shell scripts
 - Update this README if adding new functionality
 
 ## 📄 License
@@ -309,11 +297,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [BlueSpice MediaWiki Documentation](https://en.wiki.bluespice.com/)
 - [Docker Compose Reference](https://docs.docker.com/compose/)
 - [Let's Encrypt Documentation](https://letsencrypt.org/docs/)
-
-### Community
-- **Issues**: Report bugs and request features
-- **Discussions**: Share experiences and ask questions
-- **Wiki**: Additional documentation and examples
 
 ---
 

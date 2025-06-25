@@ -79,15 +79,16 @@ services:
       - ${DATADIR}/database/data:/config/databases
     environment:
       - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
-      - MYSQL_DATABASE=${DB_NAME:-bluespice}
-      - MYSQL_USER=${DB_USER:-bluespice}
-      - MYSQL_PASSWORD=${DB_PASS:-${DB_ROOT_PASS}}
+      - MYSQL_RANDOM_ROOT_PASSWORD=no
+      - MYSQL_ALLOW_EMPTY_PASSWORD=no
+      - MYSQL_INITDB_SKIP_TZINFO=1
+      - TZ=UTC
     healthcheck:
-      test: mysqladmin ping -h localhost --silent || exit 1
-      start_period: 30s
+      test: ["CMD", "mariadb", "-u", "root", "-p${DB_ROOT_PASS}", "-e", "SELECT 1;"]
       interval: 30s
       timeout: 10s
-      retries: 10
+      retries: 5
+      start_period: 60s
     depends_on:
       database-permissions:
         condition: service_completed_successfully

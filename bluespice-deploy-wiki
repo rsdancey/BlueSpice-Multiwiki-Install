@@ -177,6 +177,29 @@ wait_for_healthy() {
 
 # Create database and user
 create_database_and_user() {
+
+    # Ensure database network connectivity
+    echo "Verifying database network connectivity..."
+    if ! docker network ls | grep -q "bluespice-network"; then
+        echo "⚠ Warning: bluespice-network not found, creating..."
+        docker network create bluespice-network 2>/dev/null || true
+    fi
+    
+    # Ensure database is connected to shared network
+    if ! docker inspect bluespice-database | grep -q ""bluespice-network""; then
+        echo "✓ Connecting database to shared network"
+        docker network connect bluespice-network bluespice-database 2>/dev/null || true
+    fi
+    
+    # Test database connectivity from wiki container
+    echo "Testing database connectivity..."
+    if ! docker exec "$CONTAINER_PREFIX-wiki-web" ping -c 1 bluespice-database >/dev/null 2>&1; then
+        echo "✗ Error: Cannot reach database from wiki container"
+        echo "This usually indicates a network configuration issue."
+        return 1
+    fi
+    echo "✓ Database connectivity verified"
+
     echo "Creating database and user..."
     
     # Load shared environment for database root credentials
