@@ -109,12 +109,6 @@ prompt_wiki_domain() {
     echo "$domain"
 }
 
-prompt_wiki_language() {
-    local lang=""
-    echo "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh"
-    read -r -p "Enter wiki language code [en]: " lang
-    echo "${lang:-en}"
-}
 
 
 # Environment file creation
@@ -243,7 +237,9 @@ main() {
     # Collect user input
     WIKI_NAME=$(prompt_wiki_name)
     WIKI_DOMAIN=$(prompt_wiki_domain)
-    WIKI_LANG=$(prompt_wiki_language)
+    echo "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh"
+    read -r -p "Enter wiki language code [en]: " WIKI_LANG
+    WIKI_LANG="${WIKI_LANG:-en}"
     echo
     echo "Setup options:"
     echo "1) New wiki with SSL certificate"
