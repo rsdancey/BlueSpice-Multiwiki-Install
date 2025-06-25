@@ -138,7 +138,7 @@ ENVEOF
         echo "Generating database credentials..."
         local db_root_pass=$(openssl rand -base64 16)
         sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
-        sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$db_root_pass/" "$shared_env_file"
+        sed -i "s|^DB_ROOT_PASS=.*|DB_ROOT_PASS=$db_root_pass|" "$shared_env_file"
         echo "✓ Generated database root password for new installation"
         
         # Try to detect and populate database root credentials
@@ -155,13 +155,13 @@ ENVEOF
                 if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root -p"$existing_db_root_pass" >/dev/null 2>&1; then
                     echo "✓ Found working root credentials, updating shared environment"
                     sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
-                    sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$existing_db_root_pass/" "$shared_env_file"
+                    sed -i "s|^DB_ROOT_PASS=.*|DB_ROOT_PASS=$existing_db_root_pass|" "$shared_env_file"
                 else
                     echo "⚠ Found password but it doesn't work, trying without password..."
                     if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root >/dev/null 2>&1; then
                         echo "✓ Root user works without password, updating shared environment"
                         sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
-                        sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=/" "$shared_env_file"
+                        sed -i "s|^DB_ROOT_PASS=.*|DB_ROOT_PASS=|" "$shared_env_file"
                     else
                         echo "✗ Could not connect to database with or without password"
                     fi
@@ -171,7 +171,7 @@ ENVEOF
                 if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root >/dev/null 2>&1; then
                     echo "✓ Root user works without password, updating shared environment"
                     sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
-                    sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=/" "$shared_env_file"
+                    sed -i "s|^DB_ROOT_PASS=.*|DB_ROOT_PASS=|" "$shared_env_file"
                 else
                     echo "⚠ Could not find database root password in container and passwordless access failed"
                 fi
@@ -319,10 +319,37 @@ start_shared_services() {
         return 0
     fi
     
-    # Start services using bluespice-shared-services (which has its own live monitoring)
-    if "${SCRIPT_DIR}/bluespice-shared-services" up; then
+    # Change to shared directory for compose files
+    cd "${SHARED_DIR}"
+
+    # Source environment files to get LETSENCRYPT_EMAIL
+    if [[ -f "${SCRIPT_DIR}/.global.env" ]]; then
+        source "${SCRIPT_DIR}/.global.env"
+    fi
+    
+    # Build compose file arguments (same as bluespice-shared-services)
+    local compose_args=()
+    
+    # Add persistent data services
+    compose_args+=("-f" "docker-compose.persistent-data-services.yml")
+    
+    # Add stateless services
+    compose_args+=("-f" "docker-compose.stateless-services.yml")
+    
+    # Add proxy configuration
+    if [[ -n "${LETSENCRYPT_EMAIL:-}" ]]; then
+        compose_args+=("-f" "docker-compose.proxy-letsencrypt.yml")
+    fi
+    compose_args+=("-f" "docker-compose.proxy.yml")
+    
+    # Start services using docker compose directly (shows native progress)
+    echo "Starting shared services containers..."
+    if docker compose --env-file .shared.env "${compose_args[@]}" up -d; then
         echo
         echo "✓ All services started successfully"
+        
+        # Change back to script directory
+        cd "${SCRIPT_DIR}"
         
         # Ensure database network connectivity
         echo "Ensuring database network connectivity..."
@@ -350,6 +377,7 @@ start_shared_services() {
         return 0
     else
         echo "✗ Error: Failed to start shared services"
+        cd "${SCRIPT_DIR}"
         exit 1
     fi
 }

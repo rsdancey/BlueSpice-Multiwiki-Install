@@ -59,19 +59,19 @@ display_service_status() {
     
     case "$status" in
         "starting")
-            echo -e "   ${YELLOW}⏳ $service_name: Starting...${NC}"
+            printf " ${YELLOW}[+]${NC} Container %-35s Starting\n" "$service_name"
             ;;
         "healthy")
-            echo -e "   ${GREEN}✅ $service_name: Healthy${NC}"
+            printf " ${GREEN}✔${NC} Container %-35s Healthy\n" "$service_name"
             ;;
         "unhealthy")
-            echo -e "   ${RED}❌ $service_name: Unhealthy${NC}"
+            printf " ${RED}✗${NC} Container %-35s Unhealthy\n" "$service_name"
             ;;
         "running")
-            echo -e "   ${BLUE}🔄 $service_name: Running${NC}"
+            printf " ${GREEN}✔${NC} Container %-35s Running\n" "$service_name"
             ;;
         "stopped")
-            echo -e "   ${RED}⏹️  $service_name: Stopped${NC}"
+            printf " ${RED}✗${NC} Container %-35s Stopped\n" "$service_name"
             ;;
         "not_found")
             echo -e "   ${PURPLE}❓ $service_name: Not Found${NC}"
