@@ -302,25 +302,8 @@ configure_email_settings() {
     echo "Configuring email settings..."
     
     # Email configuration using fixed values from user rules
-    docker exec "$container" php -r "
-    \$configFile = '/app/bluespice/w/LocalSettings.php';
-    \$emailConfig = \"
-// Email Configuration
-\\\$wgEnableEmail = true;
-\\\$wgEnableUserEmail = true;
-\\\$wgEmergencyContact = 'someuser@somedomain.tld';
-\\\$wgPasswordSender = 'someuser@somedomain.tld';
-\\\$wgSMTP = [
-    'host' => 'smtp.somedomain.com',
-    'IDHost' => '${WIKI_HOST}',
-    'port' => 587,
-    'username' => 'passwordsender@somedomain.tld',
-    'password' => '${SMTP_PASS}',
-    'auth' => true
-];
-\";
-    file_put_contents(\$configFile, \$emailConfig, FILE_APPEND);
-    "
+
+    # TODO: This section needs to be written
     
     echo "✓ Email settings configured"
 }
