@@ -25,6 +25,8 @@ services:
 #      - MYSQL_USER=${DB_USER}
 #      - MYSQL_PASSWORD=${DB_PASS}
       - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
+      - MYSQL_RANDOM_ROOT_PASSWORD=no
+      - MYSQL_ALLOW_EMPTY_PASSWORD=no
       - MYSQL_INITDB_SKIP_TZINFO=1
       - TZ=UTC
     volumes:
@@ -32,12 +34,11 @@ services:
         source: bluespice-database-data
         target: /config/databases
     healthcheck:
-      test: >-
-        /usr/bin/mariadb --protocol=socket -u root -p${DB_ROOT_PASS} -e "SELECT version();"
+      test: ["CMD", "mariadb", "-u", "root", "-p${DB_ROOT_PASS}", "-e", "SELECT 1;"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
     <<: *common-config
     labels:
       com.bluespice.service: "database"
