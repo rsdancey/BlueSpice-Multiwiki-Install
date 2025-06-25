@@ -3,6 +3,8 @@
 # Setup shared services configuration for BlueSpice
 # Configures Let's Encrypt email and initializes shared environment
 
+set -euo pipefail
+
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -10,17 +12,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHARED_DIR="${SCRIPT_DIR}/shared"
 GLOBAL_ENV="${SCRIPT_DIR}/.global.env"
 
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
 # Function to prompt for email
 prompt_email() {
     local email=""
+    local existing_email=""
     local shared_env="${SHARED_DIR}/.shared.env"
     
     # Check if ADMIN_MAIL exists in .shared.env
     if [[ -f "$shared_env" ]] && grep -q "^ADMIN_MAIL=" "$shared_env" 2>/dev/null; then
         existing_email=$(grep "^ADMIN_MAIL=" "$shared_env" | cut -d'=' -f2)
-        read -r -p "Enter email address for Let's Encrypt (press Enter to use existing: $existing_email): " email
+        echo -n "Enter email address for Let's Encrypt (press Enter to use existing: $existing_email): " >&2
+        read -r email
     else
-        read -r -p "Enter email address for Let's Encrypt (or press Enter to skip): " email
+        echo -n "Enter email address for Let's Encrypt (or press Enter to skip): " >&2
+        read -r email
     fi
     
     # If user pressed Enter and we have an existing admin mail, use it
@@ -29,13 +43,14 @@ prompt_email() {
         echo "Using existing admin mail: $email" >&2
     fi
     
-    printf "%s" "$email"
+    echo "$email"
 }
 
-# Function to update global environment
 # Function to update both global and shared environment files
 update_environment_files() {
     local email="$1"
+    
+    echo "Configuring environment files..."
     
     # Create global env if it doesn't exist
     if [[ ! -f "$GLOBAL_ENV" ]]; then
@@ -44,6 +59,7 @@ update_environment_files() {
 VERSION=5.1
 EDITION=free
 ENVEOF
+        echo "✓ Created global environment file"
     fi
     
     # Update global environment with Let's Encrypt email
@@ -71,6 +87,8 @@ ENVEOF
 
 # Function to initialize shared directory and environment file
 init_shared_directory() {
+    echo "Setting up shared directory structure..."
+    
     if [[ ! -d "$SHARED_DIR" ]]; then
         echo "Creating shared directory..."
         mkdir -p "$SHARED_DIR"
@@ -117,54 +135,58 @@ ENVEOF
         echo "✓ Shared environment file created: $shared_env_file"
 
         # Generate and set database root password for new installation
+        echo "Generating database credentials..."
         local db_root_pass=$(openssl rand -base64 16)
         sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
         sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$db_root_pass/" "$shared_env_file"
         echo "✓ Generated database root password for new installation"
         
         # Try to detect and populate database root credentials
-        echo "Detecting database credentials..."
+        echo "Detecting existing database credentials..."
         
         # Check if bluespice-database container exists and is running
         if docker ps --format "table {{.Names}}" | grep -q "bluespice-database"; then
             # Try to get root password from container environment
-            local db_root_pass
-            db_root_pass=$(docker exec bluespice-database env 2>/dev/null | grep "^MYSQL_ROOT_PASSWORD=" | cut -d= -f2 || true)
+            local existing_db_root_pass
+            existing_db_root_pass=$(docker exec bluespice-database env 2>/dev/null | grep "^MYSQL_ROOT_PASSWORD=" | cut -d= -f2 || true)
             
-            if [[ -n "$db_root_pass" ]]; then
+            if [[ -n "$existing_db_root_pass" ]]; then
                 # Test if root user works with this password
-                if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root -p"$db_root_pass" >/dev/null 2>&1; then
-                    echo "✓ Found working root credentials, updating shared environment..."
+                if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root -p"$existing_db_root_pass" >/dev/null 2>&1; then
+                    echo "✓ Found working root credentials, updating shared environment"
                     sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
-                    sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$db_root_pass/" "$shared_env_file"
+                    sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=$existing_db_root_pass/" "$shared_env_file"
                 else
-                    echo "⚠ Warning: Found password but it does not work, trying without password..."
+                    echo "⚠ Found password but it doesn't work, trying without password..."
                     if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root >/dev/null 2>&1; then
-                        echo "✓ Root user works without password, updating shared environment..."
+                        echo "✓ Root user works without password, updating shared environment"
                         sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
                         sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=/" "$shared_env_file"
                     else
-                        echo "✗ Warning: Could not connect to database with or without password"
+                        echo "✗ Could not connect to database with or without password"
                     fi
                 fi
             else
                 # No password found in environment, try without password
                 if echo "SELECT 1;" | docker exec -i bluespice-database mariadb -u root >/dev/null 2>&1; then
-                    echo "✓ Root user works without password, updating shared environment..."
+                    echo "✓ Root user works without password, updating shared environment"
                     sed -i "s/^DB_ROOT_USER=.*/DB_ROOT_USER=root/" "$shared_env_file"
                     sed -i "s/^DB_ROOT_PASS=.*/DB_ROOT_PASS=/" "$shared_env_file"
                 else
-                    echo "⚠ Warning: Could not find database root password in container and passwordless access failed"
+                    echo "⚠ Could not find database root password in container and passwordless access failed"
                 fi
             fi
         else
-            echo "⚠ Warning: bluespice-database container not found or not running"
+            echo "⚠ bluespice-database container not found or not running"
         fi
+    else
+        echo "✓ Shared environment file already exists"
     fi
 }
 
 # Function to pull required Docker images
 pull_docker_images() {
+    echo
     echo "Checking and pulling required Docker images..."
     
     # Source global environment to get VERSION and EDITION
@@ -193,10 +215,9 @@ pull_docker_images() {
     
     # Check and pull each image
     for image in "${images[@]}"; do
-        echo "Checking image: $image"
         if ! docker image inspect "$image" >/dev/null 2>&1; then
             echo "Pulling image: $image"
-            if ! docker pull "$image"; then
+            if ! docker pull "$image" >/dev/null 2>&1; then
                 echo "⚠ Warning: Failed to pull $image - continuing anyway"
             else
                 echo "✓ Successfully pulled: $image"
@@ -209,8 +230,9 @@ pull_docker_images() {
     echo "✓ Docker image check complete"
 }
 
-# Function to create Docker network with improved error handling
+# Function to create Docker network
 create_docker_network() {
+    echo
     echo "Setting up Docker network..."
     
     # Check if network already exists
@@ -221,7 +243,7 @@ create_docker_network() {
     
     # Try to create the network
     echo "Creating Docker network 'bluespice-network'..."
-    if docker network create bluespice-network 2>/dev/null; then
+    if docker network create bluespice-network >/dev/null 2>&1; then
         echo "✓ Docker network created successfully"
     else
         # Network creation failed - check if it was created by another process
@@ -235,120 +257,32 @@ create_docker_network() {
     fi
 }
 
-
-# Function to start shared services
-# Get container status
-get_container_status() {
-    local container_name="$1"
-    local status
-    local health
+# Wait for container to be healthy (matching bluespice-deploy-wiki style)
+wait_for_container_health() {
+    local container="$1"
+    local max_attempts=30
+    local attempt=1
     
-    # Suppress all docker command output
-    status=$(docker inspect --format='{{.State.Status}}' "$container_name" 2>/dev/null || echo "")
-    health=$(docker inspect --format='{{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "")
+    echo "Waiting for $container to be healthy..."
     
-    if [[ -z "$status" ]]; then
-        echo "not_found"
-    elif [[ "$status" == "running" ]]; then
-        if [[ "$health" == "healthy" ]]; then
-            echo "healthy"
-        elif [[ "$health" == "starting" ]]; then
-            echo "starting"
-        elif [[ "$health" == "unhealthy" ]]; then
-            echo "unhealthy"
-        else
-            echo "running"
-        fi
-    else
-        echo "$status"
-    fi
-}
-
-# Display service status with colors and icons
-display_service_status() {
-    local service_name="$1"
-    local status="$2"
-    
-    case "$status" in
-        "starting")
-            echo -e "   ${YELLOW}⏳ $service_name: Starting...${NC}"
-            ;;
-        "healthy")
-            echo -e "   ${GREEN}✅ $service_name: Healthy${NC}"
-            ;;
-        "unhealthy")
-            echo -e "   ${RED}❌ $service_name: Unhealthy${NC}"
-            ;;
-        "running")
-            echo -e "   ${BLUE}🔄 $service_name: Running${NC}"
-            ;;
-        "not_found")
-            echo -e "   ${RED}❓ $service_name: Not Found${NC}"
-            ;;
-        *)
-            echo -e "   ${PURPLE}❔ $service_name: $status${NC}"
-            ;;
-    esac
-}
-
-# Health check monitoring function
-monitor_service_health() {
-    local services=("bluespice-database" "bluespice-cache" "bluespice-search" "bluespice-proxy")
-    local max_attempts=60
-    local attempt=0
-    
-    echo
-    echo -e "${CYAN}📊 Service Status Monitor${NC}"
-    echo -e "${CYAN}========================${NC}"
-    
-    while [[ $attempt -lt $max_attempts ]]; do
-        local healthy_count=0
-        local total_count=${#services[@]}
-        local all_healthy=true
-        
-        # Clear previous output
-        if [[ $attempt -gt 0 ]]; then
-            # Clear the previous status lines
-            for ((i=0; i<=${#services[@]}+2; i++)); do
-                echo -ne "\033[A\033[K"
-            done
-        fi
-        
-        echo
-        echo -e "${BLUE}🔍 Health Check Progress (Attempt $((attempt+1))/$max_attempts)${NC}"
-        
-        # Display current status for all services
-        for service in "${services[@]}"; do
-            local status=$(get_container_status "$service")
-            display_service_status "$service" "$status"
-            
-            if [[ "$status" == "healthy" || "$status" == "running" ]]; then
-                ((healthy_count++))
-            else
-                all_healthy=false
-            fi
-        done
-        
-        echo -e "   ${CYAN}📈 Progress: $healthy_count/$total_count services ready${NC}"
-        
-        if [[ "$all_healthy" == true ]]; then
-            echo
-            echo -e "${GREEN}🎉 All services are ready and operational!${NC}"
+    while [[ $attempt -le $max_attempts ]]; do
+        if docker ps --format "table {{.Names}}\t{{.Status}}" | grep "$container" | grep -q "healthy"; then
+            echo "✓ $container is healthy"
             return 0
         fi
         
-        sleep 3
+        echo "Attempt $attempt/$max_attempts: $container not yet healthy, waiting..."
+        sleep 10
         ((attempt++))
     done
     
-    echo
-    echo -e "${RED}⚠️  Timeout: Not all services became healthy within expected time${NC}"
-    echo -e "${YELLOW}💡 Services may still be initializing. Check status with: docker ps${NC}"
+    echo "✗ Error: $container did not become healthy within timeout"
     return 1
 }
 
 # Function to verify database initialization
 verify_database_init() {
+    echo
     echo "Verifying database initialization..."
     local shared_env_file="${SHARED_DIR}/.shared.env"
     
@@ -362,7 +296,7 @@ verify_database_init() {
     local attempt=1
     while [[ $attempt -le $max_attempts ]]; do
         if docker ps --format "{{.Names}}" | grep -q "^bluespice-database$"; then
-            echo "Database container is running, testing connectivity..."
+            echo "Testing database connectivity..."
             
             # Test database connectivity with the expected password
             if [[ -n "$DB_ROOT_PASS" ]]; then
@@ -370,15 +304,15 @@ verify_database_init() {
                     echo "✓ Database is ready with password authentication!"
                     return 0
                 else
-                    echo "Database is running but password authentication failed, attempting to set password..."
-                    if "${SCRIPT_DIR}/initialize-database-password.sh" "$DB_ROOT_PASS"; then
+                    echo "⚠ Database is running but password authentication failed"
+                    echo "Attempting to initialize database password..."
+                    if "${SCRIPT_DIR}/initialize-database-password.sh" "$DB_ROOT_PASS" >/dev/null 2>&1; then
                         echo "✓ Database password initialized successfully!"
                         return 0
                     else
                         echo "✗ Failed to initialize database password"
                         return 1
                     fi
-                    return 0
                 fi
             else
                 if docker exec bluespice-database mariadb -u root -e "SELECT 1;" >/dev/null 2>&1; then
@@ -397,7 +331,9 @@ verify_database_init() {
     return 1
 }
 
+# Function to start shared services
 start_shared_services() {
+    echo
     echo "Starting shared services..."
 
     # Check if database service is already running
@@ -407,64 +343,83 @@ start_shared_services() {
     fi
     
     echo "Launching shared services containers..."
-    if "${SCRIPT_DIR}/bluespice-shared-services" up -d; then
-        echo "✓ Shared services containers launched"
-
-
-
+    
+    # Start services using bluespice-shared-services
+    if "${SCRIPT_DIR}/bluespice-shared-services" up >/dev/null 2>&1; then
+        echo "✓ Containers launched successfully"
+        
+        # Wait for core services to become healthy
+        local core_services=(
+            "bluespice-database"
+            "bluespice-search" 
+            "bluespice-cache"
+            "bluespice-proxy"
+        )
+        
+        echo
+        echo "Waiting for services to become healthy..."
+        
+        local all_healthy=true
+        for service in "${core_services[@]}"; do
+            if ! wait_for_container_health "$service"; then
+                all_healthy=false
+            fi
+        done
+        
+        if [[ "$all_healthy" == true ]]; then
+            echo
+            echo "✓ All services are healthy and ready"
+            
+            # Ensure database network connectivity
+            echo "Ensuring database network connectivity..."
+            if ! docker network ls | grep -q "bluespice-network"; then
+                echo "Creating shared network: bluespice-network"
+                docker network create bluespice-network >/dev/null 2>&1 || true
+            fi
+            
+            # Connect database to shared network if not already connected
+            if ! docker inspect bluespice-database | grep -q "bluespice-network"; then
+                echo "Connecting database to shared network"
+                docker network connect bluespice-network bluespice-database >/dev/null 2>&1 || true
+            else
+                echo "✓ Database already connected to shared network"
+            fi
+            
+            # Verify database initialization
+            if verify_database_init; then
+                echo "✓ Database verification successful"
+            else
+                echo "✗ Database verification failed - check logs for details"
+                return 1
+            fi
+            
+            return 0
+        else
+            echo "✗ Error: Some services failed to become healthy"
+            echo "Check service status with: docker ps -a"
+            return 1
+        fi
     else
         echo "✗ Error: Failed to start shared services"
         exit 1
-    fi
-
-    # Use the enhanced health monitoring
-    if monitor_service_health; then
-        echo "✓ All services are healthy and ready"
-        
-        # Ensure database network connectivity
-        echo "Ensuring database network connectivity..."
-        if ! docker network ls | grep -q "bluespice-network"; then
-            echo "✓ Creating shared network: bluespice-network"
-            docker network create bluespice-network 2>/dev/null || true
-        fi
-        
-        # Connect database to shared network if not already connected
-        if ! docker inspect bluespice-database | grep -q "bluespice-network"; then
-            echo "✓ Connecting database to shared network"
-            docker network connect bluespice-network bluespice-database 2>/dev/null || true
-        else
-            echo "✓ Database already connected to shared network"
-        fi
-        
-        # Verify database initialization
-        if verify_database_init; then
-            echo "✓ Database verification successful"
-        else
-            echo "✗ Database verification failed - check logs for details"
-            return 1
-        fi
-        
-        return 0
-    else
-        echo "✗ Error: Services failed to become healthy within expected time"
-        echo "Check service status with: docker ps -a"
-        return 1
     fi
 }
 
 # Function to deploy shared services
 deploy_shared_services() {
+    echo
     echo "Deploying shared services infrastructure..."
 
     # Pull required Docker images
     pull_docker_images
     
-    # Create Docker network with improved error handling
+    # Create Docker network
     create_docker_network
 
     # Start the shared services
     start_shared_services
 
+    echo
     echo "✓ Shared services deployment complete"
 }
 
@@ -479,6 +434,7 @@ main() {
     email=$(prompt_email)
     
     # Update configuration
+    echo
     echo "Setting up BlueSpice shared services..."
     update_environment_files "$email"
     
@@ -492,7 +448,7 @@ main() {
     echo "✓ Shared services setup complete!"
     echo
     echo "Services should be accessible shortly."
-    echo "Use 'docker ps' to check service status."
+    echo "Use './bluespice-shared-services status' to check service status."
 }
 
 # Run main function
