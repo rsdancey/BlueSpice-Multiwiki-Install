@@ -75,7 +75,7 @@ prompt_wiki_name() {
     while [[ -z "$name" ]]; do
         read -r -p "Enter wiki name (alphanumeric, dots, dashes, underscores, no spaces): " name
         if [[ ! "$name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-            echo "Error: Wiki name must be alphanumeric, dots, dashes, underscores with no spaces"
+            echo "Error: Wiki name must be alphanumeric, dots, dashes, underscores with no spaces" >&2
             name=""
         elif [[ -d "${WIKIS_DIR}/${name}" ]]; then
             echo >&2
