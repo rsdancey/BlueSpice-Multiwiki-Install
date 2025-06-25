@@ -11,8 +11,6 @@ WIKIS_DIR="$(dirname "${SCRIPT_DIR}")/wikis"
 TEMPLATE_DIR="${SCRIPT_DIR}/wiki-template"
 
 # Default values
-
-
 WIKI_NAME=""
 WIKI_DOMAIN=""
 WIKI_LANG="en"
@@ -23,23 +21,21 @@ check_certificate_expiry() {
     local domain="$1"
     
     if docker exec bluespice-letsencrypt-service test -f "/etc/nginx/certs/${domain}.crt" 2>/dev/null; then
-        local expiry
+        local expiry expiry_epoch current_epoch days_until_expiry
         expiry=$(docker exec bluespice-letsencrypt-service openssl x509 -in "/etc/nginx/certs/${domain}.crt" -noout -enddate | cut -d= -f2)
-        local expiry_epoch
         expiry_epoch=$(date -d "$expiry" +%s)
-        local current_epoch
         current_epoch=$(date +%s)
-        local days_until_expiry=$(( (expiry_epoch - current_epoch) / 86400 ))
+        days_until_expiry=$(( (expiry_epoch - current_epoch) / 86400 ))
         
         if [[ $days_until_expiry -lt 30 ]]; then
-            echo "⚠ Warning: SSL certificate expires in $days_until_expiry days"
+            echo "Warning: SSL certificate expires in $days_until_expiry days" >&2
             return 1
         else
-            echo "✓ SSL certificate valid for $days_until_expiry days"
+            echo "SSL certificate valid for $days_until_expiry days"
             return 0
         fi
     else
-        echo "ℹ No SSL certificate found for $domain"
+        echo "No SSL certificate found for $domain"
         return 1
     fi
 }
@@ -56,7 +52,7 @@ setup_ssl_certificate() {
     local attempts=0
     while [[ $attempts -lt 12 ]]; do
         if docker exec bluespice-letsencrypt-service test -f "/etc/nginx/certs/${domain}.crt" 2>/dev/null; then
-            echo "✓ SSL certificate generated successfully"
+            echo "SSL certificate generated successfully"
             return 0
         fi
         
@@ -65,7 +61,7 @@ setup_ssl_certificate() {
         ((attempts++))
     done
     
-    echo "✗ Error: SSL certificate generation timed out"
+    echo "Error: SSL certificate generation timed out" >&2
     return 1
 }
 
@@ -78,22 +74,22 @@ prompt_wiki_name() {
             echo "Error: Wiki name must be alphanumeric, dots, dashes, underscores with no spaces" >&2
             name=""
         elif [[ -d "${WIKIS_DIR}/${name}" ]]; then
-            echo >&2
-            echo >&2 "Warning: Wiki directory '${WIKIS_DIR}/${name}' already exists"
-            echo >&2 "This may contain data from a previous installation."
-            echo >&2
+            echo
+            echo "Warning: Wiki directory '${WIKIS_DIR}/${name}' already exists"
+            echo "This may contain data from a previous installation."
+            echo
             read -r -p "Remove existing directory and continue? [y/N]: " confirm
             if [[ "$confirm" =~ ^[Yy]$ ]]; then
-                echo >&2 "Removing existing directory..."
+                echo "Removing existing directory..."
                 if rm -rf "${WIKIS_DIR:?}/${name:?}"; then
-                    echo >&2 "✓ Existing directory removed"
+                    echo "Existing directory removed"
                 else
-                    echo >&2 "✗ Error: Failed to remove existing directory"
-                    echo >&2 "Setup cancelled."
+                    echo "Error: Failed to remove existing directory" >&2
+                    echo "Setup cancelled." >&2
                     exit 1
                 fi
             else
-                echo >&2 "Setup cancelled by user."
+                echo "Setup cancelled by user."
                 exit 0
             fi
         fi
@@ -106,7 +102,7 @@ prompt_wiki_domain() {
     while [[ -z "$domain" ]]; do
         read -r -p "Enter wiki domain (e.g., wiki.example.com): " domain
         if [[ ! "$domain" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-            echo "Error: Please enter a valid domain name"
+            echo "Error: Please enter a valid domain name" >&2
             domain=""
         fi
     done
@@ -115,17 +111,17 @@ prompt_wiki_domain() {
 
 prompt_wiki_language() {
     local lang=""
-    echo >&2 "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh"
+    echo "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh" >&2
     read -r -p "Enter wiki language code [en]: " lang
     echo "${lang:-en}"
 }
 
 prompt_setup_mode() {
-    echo >&2
-    echo >&2 "Setup options:"
-    echo >&2 "1) New wiki with SSL certificate"
-    echo >&2 "2) New wiki without SSL (HTTP only)"
-    echo >&2 "3) Restore from backup"
+    echo
+    echo "Setup options:"
+    echo "1) New wiki with SSL certificate"
+    echo "2) New wiki without SSL (HTTP only)"
+    echo "3) Restore from backup"
     
     local choice=""
     while [[ ! "$choice" =~ ^[1-3]$ ]]; do
@@ -148,16 +144,21 @@ create_environment_file() {
     if [[ -f "$template_file" ]]; then
         echo "Creating environment file from template..."
         
+        # Generate random password
+        local db_password
+        db_password=$(openssl rand -base64 16 | tr -d "=+/")
+        
         # Copy template and substitute variables
-        sed -e "s/WIKI_NAME_PLACEHOLDER/${WIKI_NAME}/g" \
+        sed \
+            -e "s/WIKI_NAME_PLACEHOLDER/${WIKI_NAME}/g" \
             -e "s/WIKI_DOMAIN_PLACEHOLDER/${WIKI_DOMAIN}/g" \
             -e "s/WIKI_LANG_PLACEHOLDER/${WIKI_LANG}/g" \
-            -e "s/WIKI_DB_PASSWORD_PLACEHOLDER/$(openssl rand -base64 16 | tr -d "=+/")/g" \
+            -e "s/WIKI_DB_PASSWORD_PLACEHOLDER/${db_password}/g" \
             "$template_file" > "$env_file"
         
-        echo "✓ Environment file created: $env_file"
+        echo "Environment file created: $env_file"
     else
-        echo "✗ Error: Template file not found: $template_file"
+        echo "Error: Template file not found: $template_file" >&2
         exit 1
     fi
 }
@@ -178,9 +179,8 @@ setup_wiki_directory() {
         cp -r "${TEMPLATE_DIR}/"* "$wiki_dir/"
     fi
     
-    echo "✓ Wiki directory prepared"
+    echo "Wiki directory prepared"
 }
-
 
 # Wiki deployment
 deploy_wiki() {
@@ -190,17 +190,16 @@ deploy_wiki() {
     
     cd "$wiki_dir"
     
-    # Ensure shared environment file exists
-    
     # Deploy with fresh installation
     if ! "${SCRIPT_DIR}/bluespice-deploy-wiki" \
         --wiki-name="$WIKI_NAME" \
+        --domain="$WIKI_DOMAIN" \
         --fresh-install; then
-        echo "✗ Error: Wiki deployment failed"
+        echo "Error: Wiki deployment failed" >&2
         exit 1
     fi
     
-    echo "✓ Wiki deployed successfully"
+    echo "Wiki deployed successfully"
 }
 
 # SSL setup
@@ -210,12 +209,12 @@ setup_ssl() {
         
         if ! check_certificate_expiry "$WIKI_DOMAIN"; then
             if ! setup_ssl_certificate "$WIKI_DOMAIN"; then
-                echo "✗ Error: SSL setup failed"
+                echo "Error: SSL setup failed" >&2
                 exit 1
             fi
         fi
         
-        echo "✓ SSL configuration completed"
+        echo "SSL configuration completed"
     fi
 }
 
@@ -223,7 +222,7 @@ setup_ssl() {
 show_completion_info() {
     echo
     echo "================================================"
-    echo "✓ Wiki initialization completed successfully!"
+    echo "Wiki initialization completed successfully!"
     echo "================================================"
     echo
     echo "Wiki Details:"
@@ -247,9 +246,9 @@ show_completion_info() {
     echo "3. Configure your wiki settings"
     echo
     echo "Management commands:"
-    echo "  Start:  ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME"
+    echo "  Start:  ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --domain=$WIKI_DOMAIN"
     echo "  Stop:   docker compose -f /core/wikis/$WIKI_NAME/docker-compose.helper-service.yml -f /core/wikis/$WIKI_NAME/docker-compose.main.yml down"
-    echo "  Update: ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --run-update"
+    echo "  Update: ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --domain=$WIKI_DOMAIN --run-update"
     echo
 }
 
