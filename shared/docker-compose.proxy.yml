@@ -14,9 +14,22 @@ x-common-config: &common-config
         memory: 256M
 
 services:
+
+  proxy-permissions:
+    image: busybox:latest
+    volumes:
+      - ${DATADIR}/proxy:/data
+    command: sh -c "mkdir -p /data/vhost.d /data/html /data/certs /data/conf.d && chown -R 101:101 /data && chmod -R 755 /data"
+    restart: "no"
+    labels:
+      com.bluespice.service: "proxy-permissions"
+      com.bluespice.type: "init"
   proxy:
     image: ${BLUESPICE_SERVICE_REPOSITORY}/proxy:${VERSION}
     container_name: bluespice-proxy
+    depends_on:
+      proxy-permissions:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks:
       - bluespice-network

@@ -90,7 +90,7 @@ VERSION=5.1
 BLUESPICE_SERVICE_REPOSITORY=bluespice
 
 # Data Directory for Shared Services
-DATADIR=/opt/bluespice/shared
+DATADIR=/data/bluespice
 
 # Network Configuration
 HTTP_PORT=80
@@ -229,6 +229,7 @@ create_docker_network() {
     fi
 }
 
+
 # Function to start shared services
 start_shared_services() {
     echo "Starting shared services..."
@@ -242,6 +243,9 @@ start_shared_services() {
     echo "Launching shared services containers..."
     if "${SCRIPT_DIR}/bluespice-shared-services" up -d; then
         echo "✓ Shared services containers launched"
+
+
+
     else
         echo "✗ Error: Failed to start shared services"
         exit 1
