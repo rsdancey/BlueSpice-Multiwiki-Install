@@ -257,29 +257,6 @@ create_docker_network() {
     fi
 }
 
-# Wait for container to be healthy (matching bluespice-deploy-wiki style)
-wait_for_container_health() {
-    local container="$1"
-    local max_attempts=30
-    local attempt=1
-    
-    echo "Waiting for $container to be healthy..."
-    
-    while [[ $attempt -le $max_attempts ]]; do
-        if docker ps --format "table {{.Names}}\t{{.Status}}" | grep "$container" | grep -q "healthy"; then
-            echo "✓ $container is healthy"
-            return 0
-        fi
-        
-        echo "Attempt $attempt/$max_attempts: $container not yet healthy, waiting..."
-        sleep 10
-        ((attempt++))
-    done
-    
-    echo "✗ Error: $container did not become healthy within timeout"
-    return 1
-}
-
 # Function to verify database initialization
 verify_database_init() {
     echo
@@ -342,63 +319,35 @@ start_shared_services() {
         return 0
     fi
     
-    echo "Launching shared services containers..."
-    
-    # Start services using bluespice-shared-services
-    if "${SCRIPT_DIR}/bluespice-shared-services" up >/dev/null 2>&1; then
-        echo "✓ Containers launched successfully"
-        
-        # Wait for core services to become healthy
-        local core_services=(
-            "bluespice-database"
-            "bluespice-search" 
-            "bluespice-cache"
-            "bluespice-proxy"
-        )
-        
+    # Start services using bluespice-shared-services (which has its own live monitoring)
+    if "${SCRIPT_DIR}/bluespice-shared-services" up; then
         echo
-        echo "Waiting for services to become healthy..."
+        echo "✓ All services started successfully"
         
-        local all_healthy=true
-        for service in "${core_services[@]}"; do
-            if ! wait_for_container_health "$service"; then
-                all_healthy=false
-            fi
-        done
+        # Ensure database network connectivity
+        echo "Ensuring database network connectivity..."
+        if ! docker network ls | grep -q "bluespice-network"; then
+            echo "Creating shared network: bluespice-network"
+            docker network create bluespice-network >/dev/null 2>&1 || true
+        fi
         
-        if [[ "$all_healthy" == true ]]; then
-            echo
-            echo "✓ All services are healthy and ready"
-            
-            # Ensure database network connectivity
-            echo "Ensuring database network connectivity..."
-            if ! docker network ls | grep -q "bluespice-network"; then
-                echo "Creating shared network: bluespice-network"
-                docker network create bluespice-network >/dev/null 2>&1 || true
-            fi
-            
-            # Connect database to shared network if not already connected
-            if ! docker inspect bluespice-database | grep -q "bluespice-network"; then
-                echo "Connecting database to shared network"
-                docker network connect bluespice-network bluespice-database >/dev/null 2>&1 || true
-            else
-                echo "✓ Database already connected to shared network"
-            fi
-            
-            # Verify database initialization
-            if verify_database_init; then
-                echo "✓ Database verification successful"
-            else
-                echo "✗ Database verification failed - check logs for details"
-                return 1
-            fi
-            
-            return 0
+        # Connect database to shared network if not already connected
+        if ! docker inspect bluespice-database | grep -q "bluespice-network"; then
+            echo "Connecting database to shared network"
+            docker network connect bluespice-network bluespice-database >/dev/null 2>&1 || true
         else
-            echo "✗ Error: Some services failed to become healthy"
-            echo "Check service status with: docker ps -a"
+            echo "✓ Database already connected to shared network"
+        fi
+        
+        # Verify database initialization
+        if verify_database_init; then
+            echo "✓ Database verification successful"
+        else
+            echo "✗ Database verification failed - check logs for details"
             return 1
         fi
+        
+        return 0
     else
         echo "✗ Error: Failed to start shared services"
         exit 1
