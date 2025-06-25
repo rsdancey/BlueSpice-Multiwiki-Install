@@ -28,7 +28,7 @@ check_certificate_expiry() {
         days_until_expiry=$(( (expiry_epoch - current_epoch) / 86400 ))
         
         if [[ $days_until_expiry -lt 30 ]]; then
-            echo "Warning: SSL certificate expires in $days_until_expiry days" >&2
+            echo "Warning: SSL certificate expires in $days_until_expiry days"
             return 1
         else
             echo "SSL certificate valid for $days_until_expiry days"
@@ -111,7 +111,7 @@ prompt_wiki_domain() {
 
 prompt_wiki_language() {
     local lang=""
-    echo "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh" >&2
+    echo "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh"
     read -r -p "Enter wiki language code [en]: " lang
     echo "${lang:-en}"
 }
