@@ -258,7 +258,7 @@ generate_admin_password() {
     
     
     # Ensure bluespice data directory is writable by container user (UID 1002)
-    docker run --rm -v /data/bluespice:/data busybox chown 1002:1002 /data
+    docker run --rm -v "${WIKI_DATA_DIR}/wiki":/data busybox chown 1002:1002 /data
     
     # Write password to file inside container
     docker exec "$container" sh -c "echo '$password' > /data/bluespice/initialAdminPassword"
