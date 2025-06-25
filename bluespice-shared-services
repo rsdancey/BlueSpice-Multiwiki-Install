@@ -12,7 +12,6 @@ SHARED_ENV="${SHARED_DIR}/.shared.env"
 
 # Colors for output
 RED='\033[0;31m'
-GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
@@ -59,7 +58,7 @@ run_docker_compose() {
     mapfile -t COMPOSE_FILES < <(build_compose_args)
     
     # Execute Docker Compose with native output
-    exec docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" $command
+    exec docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" "$command"
 }
 
 # Show help
@@ -112,7 +111,7 @@ main() {
     local command="${1:-up}"
     
     # Handle help
-    if [[ "$command" == "--help" || "$command" == "-h" ]]; then
+    if [[ $command == "--help" || $command == "-h" ]]; then
         show_help
         exit 0
     fi
@@ -124,7 +123,7 @@ main() {
     fi
     
     # Handle different commands
-    case "$command" in
+    case $command in
         "up")
             echo -e "${BLUE}🚀 Starting BlueSpice Shared Services${NC}"
             echo -e "${BLUE}====================================${NC}"
