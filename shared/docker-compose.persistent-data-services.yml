@@ -17,7 +17,7 @@ services:
   search-permissions:
     image: busybox:latest
     volumes:
-      - ${DATADIR}/search:/data
+      - ${DATA_DIR}/search:/data
     command: chown -R 1000:1000 /data
     restart: "no"
     labels:
@@ -31,7 +31,7 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATADIR}/search:/usr/share/opensearch/data
+      - ${DATA_DIR}/search:/usr/share/opensearch/data
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
@@ -61,7 +61,7 @@ services:
   database-permissions:
     image: busybox:latest
     volumes:
-      - ${DATADIR}/database:/data
+      - ${DATA_DIR}/database:/data
     command: sh -c "chown -R 911:911 /data && chmod -R 755 /data"
     restart: "no"
     labels:
@@ -75,8 +75,8 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATADIR}/database/logs:/config/log/mysql
-      - ${DATADIR}/database/data:/config/databases
+      - ${DATA_DIR}/database/logs:/config/log/mysql
+      - ${DATA_DIR}/database/data:/config/databases
     environment:
       - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
       - MYSQL_RANDOM_ROOT_PASSWORD=no

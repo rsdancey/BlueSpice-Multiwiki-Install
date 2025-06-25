@@ -217,7 +217,7 @@ load_environment() {
 create_data_directories() {
     echo "Creating required directories..."
     
-    local data_dir="${DATADIR}/${WIKI_NAME}"
+    local data_dir="${DATA_DIR}/${WIKI_NAME}"
     
     # Create directory structure
     sudo mkdir -p "${data_dir}/wiki"/{database,proxy,search,wiki}
@@ -334,8 +334,12 @@ generate_admin_password() {
     local password
     password=$(openssl rand -base64 16)
     
+    
+    # Ensure bluespice data directory is writable by container user (UID 1002)
+    docker run --rm -v "${DATA_DIR}/wiki":/data busybox chown 1002:1002 /data
+    
     # Write password to file inside container
-    docker exec "$container" sh -c "echo '$password' > /data/wiki/initialAdminPassword"
+    docker exec "$container" sh -c "echo '$password' > /data/bluespice/initialAdminPassword"
     
     echo "✓ Initial admin password generated and saved"
     echo "  Admin user: WikiSysop"
@@ -354,7 +358,7 @@ run_mediawiki_install() {
         --dbuser="${DB_USER}" \
         --dbpass="${DB_PASS}" \
         --dbserver="${DB_HOST}" \
-        --passfile=/data/wiki/initialAdminPassword \
+        --passfile=/data/bluespice/initialAdminPassword \
         --server="https://${WIKI_HOST}" \
         --scriptpath="" \
         --lang="${WIKI_LANG}" \
@@ -369,7 +373,7 @@ run_maintenance_script() {
     local container="${CONTAINER_PREFIX}-wiki-web"
     
     echo "Running MediaWiki maintenance script..."
-    docker exec "$container" php /app/bluespice/w/maintenance/update.php --quick
+    docker exec "$container" php /app/bluespice/w/maintenance/run.php update.php || true
     echo "✓ Maintenance script completed"
 }
 
@@ -399,7 +403,7 @@ main() {
     
     echo "Wiki Name: $WIKI_NAME"
     echo "Domain: $WIKI_DOMAIN"
-    echo "Data Directory: ${DATADIR}/${WIKI_NAME}"
+    echo "Data Directory: ${DATA_DIR}/${WIKI_NAME}"
     echo "Container Prefix: $CONTAINER_PREFIX"
     echo
     

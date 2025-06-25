@@ -28,7 +28,7 @@ VERSION=5.1
 BLUESPICE_SERVICE_REPOSITORY=bluespice
 
 # Data Directory for Shared Services
-DATADIR=/opt/bluespice/shared
+DATA_DIR=/opt/bluespice/shared
 
 # Network Configuration
 HTTP_PORT=80
