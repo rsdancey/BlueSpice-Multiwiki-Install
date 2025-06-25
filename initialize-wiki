@@ -116,24 +116,6 @@ prompt_wiki_language() {
     echo "${lang:-en}"
 }
 
-prompt_setup_mode() {
-    echo
-    echo "Setup options:"
-    echo "1) New wiki with SSL certificate"
-    echo "2) New wiki without SSL (HTTP only)"
-    echo "3) Restore from backup"
-    
-    local choice=""
-    while [[ ! "$choice" =~ ^[1-3]$ ]]; do
-        read -r -p "Choose option [1/2/3]: " choice
-    done
-    
-    case $choice in
-        1) echo "ssl" ;;
-        2) echo "http" ;;
-        3) echo "restore" ;;
-    esac
-}
 
 # Environment file creation
 create_environment_file() {
@@ -262,7 +244,22 @@ main() {
     WIKI_NAME=$(prompt_wiki_name)
     WIKI_DOMAIN=$(prompt_wiki_domain)
     WIKI_LANG=$(prompt_wiki_language)
-    SETUP_MODE=$(prompt_setup_mode)
+    echo
+    echo "Setup options:"
+    echo "1) New wiki with SSL certificate"
+    echo "2) New wiki without SSL (HTTP only)"
+    echo "3) Restore from backup"
+    
+    local choice=""
+    while [[ ! "$choice" =~ ^[1-3]$ ]]; do
+        read -r -p "Choose option [1/2/3]: " choice
+    done
+    
+    case $choice in
+        1) SETUP_MODE="ssl" ;;
+        2) SETUP_MODE="http" ;;
+        3) SETUP_MODE="restore" ;;
+    esac
     
     echo
     echo "Configuration Summary:"
