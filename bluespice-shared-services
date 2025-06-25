@@ -58,7 +58,7 @@ run_docker_compose() {
     mapfile -t COMPOSE_FILES < <(build_compose_args)
     
     # Execute Docker Compose with native output
-    exec docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" "$command"
+    exec docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" $command
 }
 
 # Show help
