@@ -191,7 +191,7 @@ WIKI_LANG=en                        # Wiki language
 
 # Docker Configuration
 CONTAINER_PREFIX=bluespice-mywiki    # Container naming prefix
-DATADIR=/data/bluespice             # Data directory base path
+DATA_DIR=/data/bluespice             # Data directory base path
 
 # Database Configuration
 DB_NAME=mywiki_wiki                 # Database name
@@ -219,7 +219,7 @@ VERSION=5.1
 BLUESPICE_SERVICE_REPOSITORY=bluespice
 
 # Data Directory
-DATADIR=/data/bluespice
+DATA_DIR=/data/bluespice
 
 # Database Root Access
 DB_ROOT_USER=root

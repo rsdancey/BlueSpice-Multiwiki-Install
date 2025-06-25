@@ -34,11 +34,11 @@ services:
       - RENEWAL_INTERVAL=${RENEWAL_INTERVAL:-3600}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${DATADIR}/letsencrypt:/etc/acme.sh:rw
-      - ${DATADIR}/proxy/certs:/etc/nginx/certs:rw
-      - ${DATADIR}/proxy/vhost.d:/etc/nginx/vhost.d:rw
-      - ${DATADIR}/proxy/html:/usr/share/nginx/html:rw
-      - ${DATADIR}/proxy/conf.d:/etc/nginx/conf.d:rw
+      - ${DATA_DIR}/letsencrypt:/etc/acme.sh:rw
+      - ${DATA_DIR}/proxy/certs:/etc/nginx/certs:rw
+      - ${DATA_DIR}/proxy/vhost.d:/etc/nginx/vhost.d:rw
+      - ${DATA_DIR}/proxy/html:/usr/share/nginx/html:rw
+      - ${DATA_DIR}/proxy/conf.d:/etc/nginx/conf.d:rw
     depends_on:
       proxy:
         condition: service_started

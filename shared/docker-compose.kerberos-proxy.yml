@@ -24,9 +24,9 @@ services:
       - "443:443"
       - "80:80"
     volumes:
-      - ${DATADIR}/${WIKI_NAME}/proxy/vhost.d:/etc/nginx/vhost.d
-      - ${DATADIR}/${WIKI_NAME}/proxy/html:/usr/share/nginx/html
-      - ${DATADIR}/${WIKI_NAME}/proxy/certs:/etc/nginx/certs:rw
+      - ${DATA_DIR}/${WIKI_NAME}/proxy/vhost.d:/etc/nginx/vhost.d
+      - ${DATA_DIR}/${WIKI_NAME}/proxy/html:/usr/share/nginx/html
+      - ${DATA_DIR}/${WIKI_NAME}/proxy/certs:/etc/nginx/certs:rw
       - /var/run/docker.sock:/tmp/docker.sock:ro
     labels:
       - com.github.nginx-proxy.nginx=true
@@ -42,8 +42,8 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATADIR}/${WIKI_NAME}/kerberos/krb5.conf:/etc/krb5.conf
-      - ${DATADIR}/${WIKI_NAME}/kerberos/kerberos.keytab:/etc/kerberos.keytab
+      - ${DATA_DIR}/${WIKI_NAME}/kerberos/krb5.conf:/etc/krb5.conf
+      - ${DATA_DIR}/${WIKI_NAME}/kerberos/kerberos.keytab:/etc/kerberos.keytab
     environment:
       - VIRTUAL_HOST=${WIKI_HOST}
     labels:

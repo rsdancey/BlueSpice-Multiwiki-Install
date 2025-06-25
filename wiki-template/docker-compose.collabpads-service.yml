@@ -52,7 +52,7 @@ services:
       timeout: 10s
       retries: 5
     volumes:
-      - ${DATADIR}/${WIKI_NAME}/database-collabpads:/data/db
+      - ${DATA_DIR}/${WIKI_NAME}/database-collabpads:/data/db
     <<: *common-config
     labels:
       com.bluespice.service: "collabpads-database"
