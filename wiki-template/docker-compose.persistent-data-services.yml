@@ -32,6 +32,7 @@ services:
       - bluespice-network
     volumes:
       - ${DATA_DIR}/search:/usr/share/opensearch/data
+      - mysql-socket:/run/mysqld
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
@@ -77,6 +78,7 @@ services:
     volumes:
       - ${DATA_DIR}/database/logs:/config/log/mysql
       - ${DATA_DIR}/database/data:/config/databases
+      - mysql-socket:/run/mysqld
     environment:
       - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
       - MYSQL_RANDOM_ROOT_PASSWORD=no
@@ -117,3 +119,7 @@ services:
 networks:
   bluespice-network:
     external: true
+
+volumes:
+  mysql-socket:
+    driver: local

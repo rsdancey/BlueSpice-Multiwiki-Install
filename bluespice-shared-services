@@ -58,7 +58,7 @@ run_docker_compose() {
     mapfile -t COMPOSE_FILES < <(build_compose_args)
     
     # Execute Docker Compose with native output
-    exec docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" $command
+    docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" $command
 }
 
 # Show help
@@ -128,7 +128,14 @@ main() {
             echo -e "${BLUE}🚀 Starting BlueSpice Shared Services${NC}"
             echo -e "${BLUE}====================================${NC}"
             echo
+            # Create the bluespice-network if it doesn't exist
+            if ! docker network inspect bluespice-network >/dev/null 2>&1; then
+                echo "Creating bluespice-network..."
+                docker network create bluespice-network
+            fi
             run_docker_compose "up -d"
+            # Wait for services to become healthy
+            show_services_status
             ;;
             
         "down")
@@ -159,6 +166,12 @@ main() {
             run_docker_compose "restart"
             ;;
             
+        "health")
+            echo -e "${CYAN}🏥 BlueSpice Shared Services Health Check${NC}"
+            echo -e "${CYAN}==========================================${NC}"
+            show_services_status
+            ;;
+            
         *)
             echo -e "${RED}❌ Unknown command: $command${NC}" >&2
             echo -e "${CYAN}💡 Use '--help' to see available commands${NC}" >&2
@@ -166,6 +179,21 @@ main() {
             ;;
     esac
 }
+
+# Display service status using docker compose up format
+show_services_status() {
+    echo
+    echo -e "${CYAN}🔍 Checking service health status...${NC}"
+    echo -e "${CYAN}====================================${NC}"
+    echo
+    
+    # Get current status using docker compose up -d (no-op if already running)
+    cd "$SHARED_DIR"
+    source_environment
+    mapfile -t COMPOSE_FILES < <(build_compose_args)
+    docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" up -d
+}
+
 
 # Run main function with all arguments
 main "$@"

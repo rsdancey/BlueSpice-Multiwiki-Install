@@ -21,7 +21,7 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATA_DIR}/${WIKI_NAME}:/data
+      - ${DATA_DIR}:/data
     environment:
       - DB_NAME=${WIKI_NAME}
     <<: *common-config
@@ -38,7 +38,7 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATA_DIR}/${WIKI_NAME}:/data
+      - ${DATA_DIR}:/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - VERSION=${VERSION}
