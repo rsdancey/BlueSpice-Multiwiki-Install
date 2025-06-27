@@ -40,7 +40,7 @@ Each wiki deployment consists of:
 - Wiki container: `bluespice-${WIKI_NAME}-wiki-web`
 - Database: `${WIKI_NAME}_wiki` 
 - Database user: `${WIKI_NAME}_user` (restricted to specific database only)
-- SSL certificates: `${WIKI_NAME}.alderac.com`
+- SSL certificates: `${WIKI_NAME}.yourdomain.tld`
 
 ### Simple Directions
 
@@ -65,7 +65,7 @@ Example:
 This will:
 1. Create the wiki container `bluespice-Test1-wiki-web`
 2. Set up database `Test1_wiki` with isolated user `Test1_user`
-3. Configure SSL certificate for `Test1.alderac.com`
+3. Configure SSL certificate for `Test1.yourdomain.tld`
 4. Install MediaWiki with BlueSpice extensions
 5. Apply socket-based database connectivity
 6. Generate admin credentials
@@ -122,12 +122,17 @@ Restore database:
 
 ```console
 docker exec -i bluespice-database mysql -u root -p < backup/database.sql
+```
+
 Restore data directories:
 
+```console
 tar -xzf backup/wiki_data.tar.gz -C /
 
 tar -xzf backup/configuration.tar.gz -C /
 ```
+
+Restore the .env file in the wikis/${WIKI_NAME} directory
 
 Restart all services and wiki
 
@@ -159,8 +164,6 @@ This prevents MediaWiki's installer from detecting tables in other wikis' databa
 
 These scripts are run as a part of the initialize-wiki system if you choose options involving imports but you can run them independently if you want to migrate content from another wiki after you have completed the setup process.
 
-## Database Management
-
 ### Import Database
 
 ```console
@@ -174,8 +177,6 @@ Features:
 - Rollback capability on failure
 
 To make the SQL_FILE, do a total backup of SQL from your wiki's database (i.e. don't use the MediaWiki's native export utility).
-
-## Image Management
 
 ### Import Images from Archive
 
@@ -258,7 +259,7 @@ We welcome contributions! Please follow these guidelines:
 * Database connectivity functions
 * Email configuration works
 
-###Submission Process
+### Submission Process
 * Commit your changes (git commit -m 'Add amazing feature')
 * Push to the branch (git push origin feature/amazing-feature)
 * Open a Pull Request with detailed description
