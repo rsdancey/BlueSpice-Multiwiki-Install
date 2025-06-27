@@ -227,20 +227,25 @@ detect_prefix() {
 }
 
 # Remove prefix from SQL dump
-remove_prefix_from_dump() {
+remove_prefix() {
     local input_file="$1"
     local output_file="$2"
     local prefix="$3"
     
     print_info "Removing prefix '$prefix' from SQL dump..."
     
-    local sed_cmd="s/\`${prefix}_/\`/g; s/${prefix}_/ /g; s/\\\`${prefix}_/\\\`/g"
+    # Escape special characters in prefix for sed - using correct pattern
+    local escaped_prefix=$(echo "$prefix" | sed 's/[][\/.^$*]/\&/g')
     
-    if sed "$sed_cmd" "$input_file" > "$output_file"; then
+    # Use sed to remove the prefix from table names in all SQL contexts
+    if sed "s/\`${escaped_prefix}/\`/g" "$input_file" > "$output_file"; then
         print_success "Prefix removed successfully"
-        # Remove DEFINER clauses referencing non-existent users after prefix removal
-        sed -i "s/DEFINER=[^ ]*//g" "$output_file"
-        print_info "Removed DEFINER clauses"
+        
+        # Also remove DEFINER clauses which can cause issues
+        print_info "Removing DEFINER clauses"
+        sed -i "s/DEFINER=[^@]*@[^[:space:]]* //g" "$output_file"
+        
+        print_success "Prefix removal completed"
         return 0
     else
         print_error "Failed to remove prefix from dump"
@@ -320,7 +325,7 @@ import_database() {
             local processed_file
             processed_file="/tmp/processed_dump_$(date +%Y%m%d_%H%M%S).sql"
             
-            if remove_prefix_from_dump "$working_file" "$processed_file" "$detected_prefix"; then
+            if remove_prefix "$working_file" "$processed_file" "$detected_prefix"; then
                 print_success "Prefix removal completed"
                 working_file="$processed_file"
             else
