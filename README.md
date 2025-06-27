@@ -1,8 +1,12 @@
 # BlueSpice MediaWiki Deployment System
 
-BlueSpice is an enhanced version of [MediaWiki](https://www.mediawiki.org/wiki/MediaWiki). Our thanks to the team at (Hallo Welt!)[https://en.wiki.bluespice.com/wiki/Setup:Installation_Guide] for producing and supporting this amazing piece of software.
+BlueSpice is an enhanced version of [MediaWiki](https://www.mediawiki.org/wiki/MediaWiki). Our thanks to the team at [Hallo Welt!](https://bluespice.com/) for producing and supporting this amazing piece of software!
 
 This system provides automated deployment and management of BlueSpice MediaWiki instances using Docker containers with proper database isolation.
+
+## Instructions for use
+
+[This Medium article](https://medium.com/p/4cca25c38caf/edit) describes the process and includes directions on setting up a Google Compute VM to host the system.
 
 ## System Requirements
 
@@ -38,27 +42,23 @@ Each wiki deployment consists of:
 - Database user: `${WIKI_NAME}_user` (restricted to specific database only)
 - SSL certificates: `${WIKI_NAME}.alderac.com`
 
-## Instructions for use
-
-[This Medium article](https://medium.com/p/4cca25c38caf/edit) describes the process and includes directions on setting up a Google Compute VM to host the system.
-
 ### Simple Directions
 
-'''bash
+```console
 ./setup-shared-services
-'''
+```
 
 This will:
 1. Download and check files from the [BlueSpice Project](https://en.wiki.bluespice.com/wiki/Setup:Installation_Guide)
 2. Install and configure critical systems shared by all BlueSpice wikis on the system
 3. Set global environment variables used by all BlueSpice wikis
 
-```bash
+```console
 ./initialize-wiki <WIKI_NAME>
 ```
 
 Example:
-```bash
+```console
 ./initialize-wiki Test1
 ```
 
@@ -90,7 +90,7 @@ You should not need other usernames or passwords used by the installer or the wi
 
 ### Backup and Recovery
 #### Backup Strategy
-'''bash
+```console
 
 BACKUP_DIR="/backup/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$BACKUP_DIR"
@@ -108,45 +108,45 @@ tar -czf "$BACKUP_DIR/configuration.tar.gz" \
   /core/core_install/ \
   /core/wikis/ \
   --exclude='*/data/*'
-'''
+```
 
 #### Recovery Process
 
 Stop all services:
 
-'''bash
+```console
 ./bluespice-shared-services down
-'''
+```
 
 Restore database:
 
-'''bash
+```console
 docker exec -i bluespice-database mysql -u root -p < backup/database.sql
 Restore data directories:
 
 tar -xzf backup/wiki_data.tar.gz -C /
 
 tar -xzf backup/configuration.tar.gz -C /
-'''
+```
 
 Restart all services and wiki
 
-'''bash
+```console
 ./setup-shared-services
 ./bluespice-deploy-wiki --wiki-name=<wiki-name>
-'''
+```
 
 ### Upgrade Pipeline:
 
 # Standard upgrade
-'''bash
+```console
 ./bluespice-deploy-wiki --wiki-name=MyWiki --profile=upgrade
-'''
+```
 
 # Force upgrade (skip compatibility checks)
-'''bash
+```console
 ./bluespice-deploy-wiki --wiki-name=MyWiki --profile=upgrade-force
-'''
+```
 
 ## Database Architecture
 
@@ -163,7 +163,7 @@ These scripts are run as a part of the initialize-wiki system if you choose opti
 
 ### Import Database
 
-```bash
+```console
 ./smart_db_import.sh <WIKI_NAME> <SQL_FILE>
 ```
 
@@ -179,7 +179,7 @@ To make the SQL_FILE, do a total backup of SQL from your wiki's database (i.e. d
 
 ### Import Images from Archive
 
-```bash
+```console
 ./import-images.sh <WIKI_NAME> <IMAGES_ZIP_FILE>
 ```
 
@@ -192,7 +192,7 @@ Features:
 - Interactive and command-line modes
 
 Example:
-```bash
+```console
 ./import-images.sh Test1 /path/to/images.zip
 ```
 
@@ -200,7 +200,7 @@ To make the IMAGES_ZIP_FILE, zip the /images directory in the root of your wiki'
 
 ### Debugging Commands
 
-```bash
+```console
 # Check container status
 docker ps | grep bluespice-${WIKI_NAME}
 
