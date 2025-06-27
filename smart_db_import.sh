@@ -238,6 +238,9 @@ remove_prefix_from_dump() {
     
     if sed "$sed_cmd" "$input_file" > "$output_file"; then
         print_success "Prefix removed successfully"
+        # Remove DEFINER clauses referencing non-existent users after prefix removal
+        sed -i "s/DEFINER=[^ ]*//g" "$output_file"
+        print_info "Removed DEFINER clauses"
         return 0
     else
         print_error "Failed to remove prefix from dump"

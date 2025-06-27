@@ -332,6 +332,12 @@ CREATE USER '$DB_USER'@'bluespice-wiki-wiki-web.bluespice-network' IDENTIFIED BY
 
 -- Grant all privileges to all hostname patterns
 
+-- Grant SET USER privilege for handling DEFINER clauses while maintaining database isolation
+GRANT SET USER ON *.* TO '$DB_USER'@'%';
+GRANT SET USER ON *.* TO '$DB_USER'@'localhost';
+GRANT SET USER ON *.* TO '$DB_USER'@'%.bluespice-network';
+GRANT SET USER ON *.* TO '$DB_USER'@'bluespice-wiki-wiki-web.bluespice-network';
+
 -- Ensure specific database permissions
 GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'%';
 GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
@@ -510,6 +516,9 @@ INIT_EOF
     # Inject SMTP configuration using environment variables
     cat >> /tmp/post-init-settings.php << SMTP_EOF
 
+    # Ensure target directory exists
+    sudo mkdir -p "${DATA_DIR}/bluespice"
+
 \$wgSMTP = [
     'host'     => '${SMTP_HOST}',
     'IDHost'   => '${WIKI_HOST}',
@@ -520,7 +529,7 @@ INIT_EOF
 ];
 SMTP_EOF
 
-    sudo mv /tmp/post-init-settings.php "${DATA_DIR}/bluespice/post-init-settings.php"
+    sudo cp /tmp/post-init-settings.php "${DATA_DIR}/bluespice/post-init-settings.php" && sudo rm -f /tmp/post-init-settings.php
     
     log_info "BlueSpice initialization files created"
 }
