@@ -397,7 +397,7 @@ show_completion_info() {
     echo "  Language: $WIKI_LANG"
     echo ""
     echo "To view Admin password for user WikiSysop:"
-    echo "docker exec bluespice-Test1-wiki-web cat /data/bluespice/initialAdminPassword"
+    echo "docker exec bluespice-$WIKI_NAME-wiki-web cat /data/bluespice/initialAdminPassword"
     echo
     
     if [[ "$SETUP_MODE" == "ssl" ]] || [[ "$SSL_ENABLED" == "true" ]]; then
