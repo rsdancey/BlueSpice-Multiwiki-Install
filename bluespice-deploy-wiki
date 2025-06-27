@@ -666,7 +666,7 @@ deploy_wiki() {
     else
         log_info "Starting existing wiki..."
         cd "/core/wikis/${WIKI_NAME}"
-        docker compose up -d
+        docker compose -f docker-compose.main.yml -f docker-compose.helper-service.yml up -d
         log_info "Wiki started successfully!"
     fi
 }
