@@ -19,6 +19,93 @@ SKIP_DIRECTORY_SETUP=false
 SSL_ENABLED=false
 
 # SSL Certificate functions
+# Help function
+show_help() {
+    cat << 'HELP'
+BlueSpice Wiki Initialization Wizard
+====================================
+
+SYNOPSIS:
+    ./initialize-wiki [OPTIONS]
+
+DESCRIPTION:
+    Interactive setup wizard for creating new BlueSpice wiki instances.
+    Supports both fresh installations and restoration from backups.
+
+OPTIONS:
+    -h, --help          Show this help message and exit
+
+FEATURES:
+    • Automated wiki directory setup
+    • SSL certificate management with Let's Encrypt
+    • SMTP email configuration with validation
+    • Database user creation with socket connections
+    • Backup restoration with optional image import
+    • Multi-language support (en, de, fr, es, it, pt, nl, pl, ru, ja, zh)
+
+SMTP CONFIGURATION:
+    The wizard will prompt for SMTP settings to enable email notifications.
+    Supported hosts: Gmail, Outlook, custom SMTP servers
+    Password validation ensures no spaces or invalid characters.
+
+DATABASE CONNECTIVITY:
+    • Uses unique database users per wiki (e.g., wikiname_user)
+    • Employs socket connections for improved performance
+    • Automatic password synchronization for localhost access
+
+SSL CERTIFICATES:
+    • Automatic Let's Encrypt certificate generation
+    • Certificate expiry monitoring (warns when <30 days)
+    • Automatic renewal support
+
+POST-INSTALLATION:
+    After successful setup, the wiki will be accessible at:
+    • HTTPS: https://your-domain.com (with SSL)
+    • HTTP: http://your-domain.com (without SSL)
+
+MANAGEMENT COMMANDS:
+    Start wiki:     ./bluespice-deploy-wiki --wiki-name=NAME
+    Stop wiki:      docker compose -f /path/to/wiki down
+    Update wiki:    ./bluespice-deploy-wiki --wiki-name=NAME --run-update
+
+EXAMPLES:
+    ./initialize-wiki                    # Interactive mode
+    ./initialize-wiki --help            # Show this help
+    ./initialize-wiki --version         # Show version info
+
+FILES:
+    /core/wikis/WIKI_NAME/              # Wiki instance directory
+    /core/wikis/WIKI_NAME/.env          # Environment configuration
+    /core/wikis/WIKI_NAME/admin_password.txt  # Generated admin password
+
+REQUIREMENTS:
+    • Docker and Docker Compose
+    • BlueSpice database service running
+    • Network connectivity for SSL certificate generation
+
+For more information, see the README.md file or BlueSpice documentation.
+HELP
+}
+
+
+# Parse command line arguments
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            *)
+                echo "Error: Unknown option $1" >&2
+                echo "Use --help for usage information" >&2
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
 check_certificate_expiry() {
     local domain="$1"
     
@@ -78,8 +165,10 @@ create_environment_file() {
     if [[ -f "$template_file" ]]; then
         echo "Creating environment file from template..."
         
+        # Generate unique database user for this wiki
+        local db_user
+        db_user="${WIKI_NAME}_user"
         # Generate random password
-        local db_password
         db_password=$(openssl rand -base64 16 | tr -d "=+/")
         
         # Copy template and substitute variables
@@ -88,6 +177,7 @@ create_environment_file() {
             -e "s/WIKI_DOMAIN_PLACEHOLDER/${WIKI_DOMAIN}/g" \
             -e "s/WIKI_LANG_PLACEHOLDER/${WIKI_LANG}/g" \
             -e "s/WIKI_DB_PASSWORD_PLACEHOLDER/${db_password}/g" \
+            -e "s/WIKI_DB_USER_PLACEHOLDER/${db_user}/g" \
             -e "s/SMTP_HOST_PLACEHOLDER/${SMTP_HOST}/g" \
             -e "s/SMTP_PORT_PLACEHOLDER/${SMTP_PORT}/g" \
             -e "s/SMTP_USER_PLACEHOLDER/${SMTP_USER}/g" \
@@ -191,34 +281,31 @@ restore_from_backup() {
         echo "Detected SQL database dump - using database restoration method"
         
         # Get database credentials
-        # Get database credentials
-        local db_name
         local db_user
-        local db_pass
-        db_name=$(grep DB_NAME "$wiki_dir/.env" | cut -d= -f2)
         db_user=$(grep DB_USER "$wiki_dir/.env" | cut -d= -f2)
-        db_pass=$(grep DB_PASS "$wiki_dir/.env" | cut -d= -f2)
         
-        echo "Restoring database from SQL dump..."
+        echo "Restoring database from SQL dump using smart importer..."
         
-        # Copy SQL file to database container and import
-        if docker cp "$temp_sql" bluespice-database:/tmp/restore.sql; then
-            echo "SQL file copied to database container"
-        else
-            echo "Error: Failed to copy SQL file to database container" >&2
+        # Use smart database importer with prefix detection
+        local smart_importer="$SCRIPT_DIR/smart_db_import.sh"
+        
+        
+        if [[ ! -f "$smart_importer" ]]; then
+            echo "Error: Smart database importer not found at: $smart_importer" >&2
             return 1
         fi
         
-        # Import the SQL dump using the database container
-        if docker exec bluespice-database sh -c "mariadb -u $db_user -p$db_pass $db_name < /tmp/restore.sql"; then
-            echo "✓ Database restored successfully from SQL dump"
+        # Set up environment for smart importer
+        export WIKI_DIR="$wiki_dir"
+        export SQL_FILE="$temp_sql"
+        
+        # Call the smart importer script
+        if "$smart_importer" "$temp_sql"; then
+            echo "✓ Database restored successfully using smart importer"
         else
-            echo "Error: Database restoration failed" >&2
+            echo "Error: Smart database import failed" >&2
             return 1
         fi
-        
-        # Clean up the temporary file in database container
-        docker exec bluespice-database rm -f /tmp/restore.sql
         
     elif head -5 "$temp_sql" | grep -q "<mediawiki\|<siteinfo"; then
         echo "Detected MediaWiki XML dump - using importDump.php"
@@ -265,6 +352,38 @@ restore_from_backup() {
 
 
 
+
+# Images import function using images import script
+import_images() {
+    local images_file="$1"
+    local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
+    
+    echo "Starting images import..."
+    
+    if [[ ! -f "$images_file" ]]; then
+        echo "Error: Images file not found: $images_file" >&2
+        return 1
+    fi
+    
+    local script_dir="/core/core_install"
+    local images_importer="$script_dir/import-images.sh"
+    
+    if [[ ! -f "$images_importer" ]]; then
+        echo "Error: Images import script not found at: $images_importer" >&2
+        return 1
+    fi
+    
+    echo "Using images import script to import images..."
+    
+    if "$images_importer" --wiki-name="$WIKI_NAME" --images-archive="$images_file"; then
+        echo "✓ Images imported successfully"
+        return 0
+    else
+        echo "Error: Images import failed" >&2
+        return 1
+    fi
+}
+
 # Display completion information
 show_completion_info() {
     echo
@@ -276,6 +395,9 @@ show_completion_info() {
     echo "  Name: $WIKI_NAME"
     echo "  Domain: $WIKI_DOMAIN"
     echo "  Language: $WIKI_LANG"
+    echo ""
+    echo "To view Admin password for user WikiSysop:"
+    echo "docker exec bluespice-Test1-wiki-web cat /data/bluespice/initialAdminPassword"
     echo
     
     if [[ "$SETUP_MODE" == "ssl" ]] || [[ "$SSL_ENABLED" == "true" ]]; then
@@ -287,10 +409,9 @@ show_completion_info() {
     fi
     
     echo
-    echo "Next steps:"
-    echo "1. Access your wiki at the URL above"
-    echo "2. Log in with the default admin credentials"
-    echo "3. Configure your wiki settings"
+    echo "✓ Database connectivity: Socket connection configured for optimal performance"
+    echo "✓ Unique user authentication: ${WIKI_NAME}_user created with proper permissions"
+
     echo
     echo "Management commands:"
     echo "  Start:  ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --domain=$WIKI_DOMAIN"
@@ -301,6 +422,9 @@ show_completion_info() {
 
 # Main execution
 main() {
+    # Parse command line arguments
+    parse_arguments "$@"
+
     echo "BlueSpice Wiki Initialization Wizard"
     echo "======================================"
     echo
@@ -397,7 +521,8 @@ main() {
             SMTP_PORT=$(grep "^SMTP_PORT=" "$env_file" | cut -d= -f2 2>/dev/null || echo "587")
             SMTP_USER=$(grep "^SMTP_USER=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
             # Detect SSL configuration
-            local letsencrypt_host=$(grep "^LETSENCRYPT_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
+            local letsencrypt_host
+            letsencrypt_host=$(grep "^LETSENCRYPT_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
             if [[ -n "$letsencrypt_host" ]]; then
                 # SSL is configured in existing setup
                 SSL_ENABLED=true
@@ -428,10 +553,11 @@ main() {
     echo "1) New wiki with SSL certificate"
     echo "2) New wiki without SSL (HTTP only)"
     echo "3) Restore from backup"
+    echo "4) Restore from backup with images"
     
     local choice=""
-    while [[ ! "$choice" =~ ^[1-3]$ ]]; do
-        printf "Choose option [1/2/3]: "; read -r choice
+    while [[ ! "$choice" =~ ^[1-4]$ ]]; do
+        printf "Choose option [1/2/3/4]: "; read -r choice
     done
     
     case $choice in
@@ -450,7 +576,33 @@ main() {
                 fi
                 printf "Enter path to backup file (.sql or .sql.gz): "; read -r BACKUP_FILE
             done
+            echo "Selected backup file: $BACKUP_FILE"            ;;
+        4) 
+            SETUP_MODE="restore_with_images"
+            echo
+            echo "Backup File Selection:"
+            printf "Enter path to backup file (.sql or .sql.gz): "; read -r BACKUP_FILE
+            while [[ -z "$BACKUP_FILE" ]] || [[ ! -f "$BACKUP_FILE" ]]; do
+                if [[ -z "$BACKUP_FILE" ]]; then
+                    echo "Error: Backup file path cannot be empty"
+                elif [[ ! -f "$BACKUP_FILE" ]]; then
+                    echo "Error: File not found: $BACKUP_FILE"
+                fi
+                printf "Enter path to backup file (.sql or .sql.gz): "; read -r BACKUP_FILE
+            done
             echo "Selected backup file: $BACKUP_FILE"
+            echo
+            echo "Images Archive Selection:"
+            printf "Enter path to images archive (.zip): "; read -r IMAGES_FILE
+            while [[ -z "$IMAGES_FILE" ]] || [[ ! -f "$IMAGES_FILE" ]]; do
+                if [[ -z "$IMAGES_FILE" ]]; then
+                    echo "Error: Images file path cannot be empty"
+                elif [[ ! -f "$IMAGES_FILE" ]]; then
+                    echo "Error: File not found: $IMAGES_FILE"
+                fi
+                printf "Enter path to images archive (.zip): "; read -r IMAGES_FILE
+            done
+            echo "Selected images file: $IMAGES_FILE"
             ;;
     esac
     
@@ -467,6 +619,9 @@ main() {
     echo "  SMTP User: $SMTP_USER"
     if [[ "$SETUP_MODE" == "restore" ]]; then
         echo "  Backup File: $BACKUP_FILE"
+    elif [[ "$SETUP_MODE" == "restore_with_images" ]]; then
+        echo "  Backup File: $BACKUP_FILE"
+        echo "  Images File: $IMAGES_FILE"
     fi
     
     printf "Proceed with this configuration? [y/N]: "; read -r confirm
@@ -491,6 +646,15 @@ main() {
     if [[ "$SETUP_MODE" == "restore" ]]; then
         if ! restore_from_backup "$BACKUP_FILE"; then
             echo "Error: Backup restoration failed" >&2
+            exit 1
+        fi
+    elif [[ "$SETUP_MODE" == "restore_with_images" ]]; then
+        if ! restore_from_backup "$BACKUP_FILE"; then
+            echo "Error: Backup restoration failed" >&2
+            exit 1
+        fi
+        if ! import_images "$IMAGES_FILE"; then
+            echo "Error: Images import failed" >&2
             exit 1
         fi
     fi

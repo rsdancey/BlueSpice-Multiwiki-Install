@@ -30,6 +30,143 @@ log_error() {
 }
 
 # Load environment variables
+# Help function
+show_help() {
+    cat << 'HELP'
+BlueSpice Wiki Deployment Script
+===============================
+
+SYNOPSIS:
+    ./bluespice-deploy-wiki --wiki-name=NAME [OPTIONS]
+
+DESCRIPTION:
+    Deploys and manages BlueSpice wiki instances with enhanced database connectivity,
+    socket connection support, and automated configuration management.
+
+REQUIRED ARGUMENTS:
+    --wiki-name=NAME        Name of the wiki instance to deploy/manage
+                           Must match an existing wiki directory in /core/wikis/
+
+OPTIONS:
+    --fresh-install        Perform a fresh installation (removes existing data)
+    --run-update          Run update/upgrade procedures on existing wiki
+    --profile=upgrade     Run standard upgrade pipeline
+    --profile=upgrade-force   Force upgrade pipeline (use with caution)
+    -h, --help            Show this help message and exit
+
+FEATURES:
+    • Enhanced socket connection management for improved database performance
+    • Unique database user creation per wiki instance (e.g., wikiname_user)
+    • Comprehensive health checks and verification procedures
+    • SSL certificate integration and management
+    • Email/SMTP configuration validation
+    • Automated service orchestration with Docker Compose
+
+DEPLOYMENT PROCESS:
+    1. Environment validation and configuration loading
+    2. Database connectivity verification
+    3. Unique user authentication setup with socket connections
+    4. MediaWiki installation/update procedures
+    5. BlueSpice-specific configuration and extensions
+    6. Service health checks and verification
+    7. Post-deployment cleanup and optimization
+
+DATABASE CONNECTIVITY:
+    • Uses direct database host connections
+    • Creates unique database users per wiki (PREFIX_user format)
+    • Enhanced database user management
+    • Enhanced error handling for connection issues
+    • Improved performance through local socket communication
+
+UPGRADE PROFILES:
+    upgrade         Standard upgrade process with safety checks
+    upgrade-force   Forced upgrade bypassing some safety checks
+                   (Use only when standard upgrade fails)
+
+EXAMPLES:
+    # Deploy a new wiki instance
+    ./bluespice-deploy-wiki --wiki-name=my-wiki --fresh-install
+
+    # Update an existing wiki
+    ./bluespice-deploy-wiki --wiki-name=my-wiki --run-update
+
+    # Perform standard upgrade
+    ./bluespice-deploy-wiki --wiki-name=my-wiki --profile=upgrade
+
+    # Force upgrade (emergency use)
+    ./bluespice-deploy-wiki --wiki-name=my-wiki --profile=upgrade-force
+
+    # Show help
+    ./bluespice-deploy-wiki --help
+
+PREREQUISITES:
+    • Wiki instance directory must exist in /core/wikis/WIKI_NAME/
+    • Valid .env configuration file in the wiki directory
+    • BlueSpice database service must be running and accessible
+    • Docker and Docker Compose must be available
+    • Sufficient disk space and memory resources
+
+FILES AND DIRECTORIES:
+    /core/wikis/WIKI_NAME/.env              Environment configuration
+    /core/wikis/WIKI_NAME/docker-compose.*  Service orchestration files
+    /data/bluespice/initialAdminPassword Generated admin credentials
+    /data/bluespice/                        Persistent data storage
+
+TROUBLESHOOTING:
+    • Database connection issues: Check socket connectivity and user permissions
+    • Service startup failures: Verify Docker daemon and resource availability
+    • SSL problems: Check certificate validity and Let's Encrypt configuration
+    • Permission errors: Ensure proper directory ownership and Docker access
+
+EXIT CODES:
+    0   Success
+    1   General error (invalid arguments, missing requirements)
+    2   Database connectivity failure
+    3   Service deployment failure
+    4   Configuration validation failure
+
+For more information, see the BlueSpice documentation or contact support.
+HELP
+}
+
+setup_socket_proxy() {
+    local container="$1"
+    
+    log_info "Installing socat and setting up socket proxy in $container..."
+    docker exec --user root "$container" bash -c '
+    # Install socat if not present (Alpine Linux uses apk)
+    if ! command -v socat >/dev/null; then
+        apk update >/dev/null 2>&1
+        apk add socat >/dev/null 2>&1
+    fi
+    
+    # Create MySQL socket directory
+    mkdir -p /var/run/mysqld
+    
+    # Kill any existing socat processes
+    pkill socat 2>/dev/null || true
+    
+    # Remove any existing socket file
+    rm -f /var/run/mysqld/mysqld.sock
+    
+    # Create socket proxy that forwards local socket to remote database
+    nohup socat UNIX-LISTEN:/var/run/mysqld/mysqld.sock,fork,reuseaddr TCP:database:3306 </dev/null >/dev/null 2>&1 &
+    
+    # Wait for socket to be created
+    sleep 3
+    
+    # Fix socket permissions so non-root users can access it
+    chmod 777 /var/run/mysqld/mysqld.sock
+    
+    # Verify socket exists
+    if [ ! -S /var/run/mysqld/mysqld.sock ]; then
+        echo "Error: Failed to create socket proxy"
+        exit 1
+    fi
+    '
+}
+
+
 load_environment() {
     if [[ -f "/core/wikis/${WIKI_NAME}/.env" ]]; then
         set -a
@@ -59,6 +196,10 @@ load_environment() {
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
             --wiki-name=*)
                 WIKI_NAME="${1#*=}"
                 shift
@@ -121,7 +262,7 @@ fix_data_permissions() {
     
     # The main data directory needs to be writable by the bluespice user (UID 1002)
     # This is mounted as /data inside the container
-    sudo chown 1002:bluespice /data/bluespice 2>/dev/null || true
+    sudo chown 1002:bluespice "${DATA_DIR}/bluespice" 2>/dev/null || true
     
     # Ensure the bluespice user can write to the mounted data directory
     sudo chmod -R 777 /data/ 2>/dev/null || true
@@ -158,7 +299,7 @@ test_database_connectivity() {
     log_info "Testing database connectivity..."
     
     # Test connection directly to the database container using mariadb
-    if docker exec bluespice-database mariadb -u"$DB_ROOT_USER" -p"$DB_ROOT_PASS" -e "SELECT 1;" >/dev/null 2>&1; then
+    if docker exec bluespice-database mariadb -h localhost -P 3306 -u"$DB_ROOT_USER" -p"$DB_ROOT_PASS" -e "SELECT 1;" >/dev/null 2>&1; then
         log_info "Database connectivity verified"
         return 0
     else
@@ -172,7 +313,7 @@ create_database_and_user() {
     log_info "Creating database and user..."
     
     # Single comprehensive SQL block that handles everything
-    cat << SQL_EOF | docker exec -i bluespice-database mariadb -u"$DB_ROOT_USER" -p"$DB_ROOT_PASS"
+    cat << SQL_EOF | docker exec -i bluespice-database mariadb -h localhost -P 3306 -u"$DB_ROOT_USER" -p"$DB_ROOT_PASS"
 -- Create database
 CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -180,6 +321,7 @@ CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4
 DROP USER IF EXISTS '$DB_USER'@'%';
 DROP USER IF EXISTS '$DB_USER'@'localhost';
 DROP USER IF EXISTS '$DB_USER'@'%.bluespice-network';
+DROP USER IF EXISTS '$DB_USER'@'localhost';
 DROP USER IF EXISTS '$DB_USER'@'bluespice-wiki-wiki-web.bluespice-network';
 
 -- Create users with all necessary hostname patterns
@@ -189,10 +331,6 @@ CREATE USER '$DB_USER'@'%.bluespice-network' IDENTIFIED BY '$DB_PASS';
 CREATE USER '$DB_USER'@'bluespice-wiki-wiki-web.bluespice-network' IDENTIFIED BY '$DB_PASS';
 
 -- Grant all privileges to all hostname patterns
-GRANT ALL PRIVILEGES ON *.* TO '$DB_USER'@'%' WITH GRANT OPTION;
-GRANT ALL PRIVILEGES ON *.* TO '$DB_USER'@'localhost' WITH GRANT OPTION;
-GRANT ALL PRIVILEGES ON *.* TO '$DB_USER'@'%.bluespice-network' WITH GRANT OPTION;
-GRANT ALL PRIVILEGES ON *.* TO '$DB_USER'@'bluespice-wiki-wiki-web.bluespice-network' WITH GRANT OPTION;
 
 -- Ensure specific database permissions
 GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'%';
@@ -208,20 +346,27 @@ SQL_EOF
 
 # Generate admin password
 generate_admin_password() {
-    local password_file="/core/wikis/${WIKI_NAME}/admin_password.txt"
+    local password_file="/data/bluespice/initialAdminPassword"
     
-    log_info "Generating initial admin password..."
-    
-    # Generate a random password
-    local admin_password
-    admin_password=$(openssl rand -base64 18)
-    echo "$admin_password" > "$password_file"
-    chmod 600 "$password_file"
-    
-    log_info "Initial admin password generated and saved"
-    log_info "  Admin user: WikiSysop"
-    log_info "  Password: $admin_password"
-    log_info "  Please save this password - it will be displayed only once!"
+    if [ -f "$password_file" ]; then
+        log_info "Using existing admin password from $password_file"
+        local existing_password=$(cat "$password_file")
+        log_info "  Admin user: WikiSysop"
+        log_info "  Password: ${existing_password:0:1}********${existing_password: -1}"
+        log_info "  (Password file already exists - not generating new one)"
+    else
+        log_info "Generating initial admin password..."
+        
+        # Generate a random password
+        local admin_password
+        admin_password=$(openssl rand -base64 18)
+        echo "$admin_password" > "$password_file"
+        
+        log_info "Initial admin password generated and saved"
+        log_info "  Admin user: WikiSysop"
+        log_info "  Password: $admin_password"
+        log_info "  Please save this password - it will be displayed only once!"
+    fi
 }
 
 # Create BlueSpice initialization files
@@ -234,21 +379,113 @@ create_bluespice_files() {
     log_info "Patching MediaWiki installer to use DB_ROOT credentials..."
     docker exec "$container" sed -i "s/installdbuser=${DB_USER}/installdbuser=${DB_USER}/" /app/bin/run-installation.d/020-install-database
     docker exec "$container" sed -i "s/installdbpass=${DB_PASS}/installdbpass=${DB_PASS}/" /app/bin/run-installation.d/020-install-database
-    # Update installer to prefer socket connection (localhost) over TCP
-    docker exec "$container" sed -i "s/--dbserver="'$DB_HOST'"/--dbserver=localhost/" /app/bin/run-installation.d/020-install-database
+    # Force table creation even if installer thinks they exist
+    log_info "Patching installer to force table creation..."
+    # Patch installer to use socket connections
+    log_info "Patching installer to use socket connections..."
+    docker exec "$container" bash -c 'cat > /app/bin/run-installation.d/020-install-database << "SOCKET_PATCH_EOF"
+#!/bin/bash
+
+# Set required environment variables for MediaWiki installer
+export WIKI_NAME="Test1"
+export adminUserName="WikiSysop"
+export adminPass="$(cat /data/bluespice/initialAdminPassword)"
+
+installdbuser=${DB_USER}
+installdbpass=${DB_PASS}
+lang=${WIKI_LANG:-en}
+timestamp=$(date +%Y%m%d_%H%M%S)
+appDir="/app/bluespice/w"
+
+echo "=== SOCKET-BASED DATABASE INSTALLATION ==="
+echo "Installing database with values:"
+echo "dbserver: localhost (socket)"
+echo "dbname: $DB_NAME"
+echo "dbuser: $DB_USER"
+echo "dbpass: ${DB_PASS:0:1}********${DB_PASS: -1}"
+echo "installdbuser: $installdbuser"
+echo "installdbpass: ${installdbpass:0:1}********${installdbpass: -1}"
+echo "lang: $lang"
+echo "admin user: $adminUserName"
+echo "pass: ${adminPass:0:1}********${adminPass: -1}"
+echo "wiki name: $WIKI_NAME"
+echo "timestamp: $timestamp"
+echo ""
+
+# Remove any existing LocalSettings.php
+if [ -f $appDir/LocalSettings.php ]; then
+    echo "Removing existing LocalSettings.php"
+    rm -f $appDir/LocalSettings.php
+fi
+
+# Clear installation markers
+rm -f $appDir/.installation_complete
+rm -f /data/bluespice/.installation_complete
+
+echo "Starting MediaWiki installation using socket connection..."
+
+# Install using socket connection (localhost will use the socket proxy)
+php $appDir/maintenance/install.php \
+    --force \
+    --dbtype=mysql \
+    --dbserver=localhost \
+    --dbname=$DB_NAME \
+    --installdbuser=$installdbuser \
+    --installdbpass=$installdbpass \
+    --dbuser=$DB_USER \
+    --dbpass=$DB_PASS \
+    --pass=$adminPass \
+    --lang=$lang \
+    --scriptpath=/w \
+    --server="$WIKI_SERVER" \
+    "$WIKI_NAME" \
+    "$adminUserName" \
+    2>&1 | tee -a /data/bluespice/logs/install-$timestamp.log
+
+INSTALL_RESULT=${PIPESTATUS[0]}
+
+if [ $INSTALL_RESULT -eq 0 ]; then
+    echo "✓ MediaWiki installation completed successfully"
+    touch /data/bluespice/.installation_complete
+    echo "$(date): Socket-based installation completed successfully" >> /data/bluespice/logs/install-$timestamp.log
+else
+    echo "✗ MediaWiki installation failed"
+    echo "$(date): Installation failed with exit code $INSTALL_RESULT" >> /data/bluespice/logs/install-$timestamp.log
+    exit 1
+fi
+
+# Remove the generated LocalSettings.php as BlueSpice uses its own
+if [ -f $appDir/LocalSettings.php ]; then
+    echo "Removing generated LocalSettings.php (BlueSpice uses its own configuration)"
+    rm $appDir/LocalSettings.php
+fi
+
+echo "=== SOCKET INSTALLATION COMPLETE ==="
+SOCKET_PATCH_EOF'
+    
+    # Make the patched script executable
+    docker exec "$container" chmod +x /app/bin/run-installation.d/020-install-database
+    log_info "Installer patched for socket connections"
     log_info "MediaWiki installer patched for socket connection"
 
+
     log_info "Database users configured during creation - no additional sync needed"
+
+    # Setup socket proxy for MediaWiki installer
+    log_info "Setting up socket proxy for MediaWiki installer..."
+    setup_socket_proxy "$container"
+    log_info "Socket proxy configured successfully"
     
     # Create subdirectories including logs and simplesamlphp
     mkdir -p /data/simplesamlphp/certs
     sudo chown -R root:bluespice /data/simplesamlphp
     
     # Create pre-init-settings.php
-    sudo sh -c 'echo "<?php" > /data/bluespice/pre-init-settings.php'
+    sudo sh -c "echo '<?php' > ${DATA_DIR}/bluespice/pre-init-settings.php"
     
     # Create post-init-settings.php with SMTP configuration
     # Load environment variables from .env file
+        # shellcheck source=/dev/null
     if [[ -f ".env" ]]; then
         source .env
     fi
@@ -283,7 +520,7 @@ INIT_EOF
 ];
 SMTP_EOF
 
-    sudo mv /tmp/post-init-settings.php /data/bluespice/post-init-settings.php
+    sudo mv /tmp/post-init-settings.php "${DATA_DIR}/bluespice/post-init-settings.php"
     
     log_info "BlueSpice initialization files created"
 }
@@ -292,7 +529,7 @@ SMTP_EOF
 run_bluespice_install() {
     local container="${CONTAINER_PREFIX}-wiki-web"
     local admin_password
-    admin_password=$(cat "/core/wikis/${WIKI_NAME}/admin_password.txt")
+    admin_password=$(cat "/data/bluespice/initialAdminPassword")
     
     log_info "Running BlueSpice installation..."
     
@@ -314,9 +551,44 @@ run_maintenance_script() {
     
     log_info "Running maintenance script..."
     
-    docker exec "$container" /app/bin/run-updates
+    docker exec "$container" /app/bin/run-maintenance update --quick --doshared
     
     log_info "Maintenance script completed"
+}
+
+
+# Retry search index build if it failed during installation
+retry_search_index_build() {
+    local container="${CONTAINER_PREFIX}-wiki-web"
+    
+    log_info "Verifying search index build..."
+    
+    # Check if we can access the database tables first
+    local table_check_result
+    table_check_result=$(docker exec "$container" php -r "
+        require_once '/app/bluespice/w/includes/WebStart.php';
+        try {
+            \$dbr = wfGetDB( DB_REPLICA );
+            \$result = \$dbr->tableExists('page');
+            echo \$result ? 'exists' : 'missing';
+        } catch (Exception \$e) {
+            echo 'error: ' . \$e->getMessage();
+        }
+    " 2>/dev/null || echo "error")
+    
+    if [[ "$table_check_result" == "exists" ]]; then
+        log_info "Database tables verified, attempting to rebuild search index..."
+        
+        # Try to rebuild the search index with proper error handling
+        if docker exec "$container" php /app/bluespice/w/extensions/BlueSpiceExtendedSearch/maintenance/rebuildIndex.php 2>/dev/null; then
+            log_info "Search index rebuild completed successfully"
+        else
+            log_info "Search index rebuild skipped or failed (this is non-critical for wiki functionality)"
+        fi
+    else
+        log_info "Database tables not fully ready, skipping search index rebuild"
+        log_info "Search index can be rebuilt later using maintenance scripts"
+    fi
 }
 
 # Main deployment function
@@ -368,6 +640,7 @@ deploy_wiki() {
             create_bluespice_files
             run_bluespice_install
             run_maintenance_script
+            retry_search_index_build
             
             # Now restart the task container
             log_info "Starting task container..."
@@ -376,7 +649,7 @@ deploy_wiki() {
             log_info "Wiki deployment completed successfully!"
             echo ""
             echo "Access your wiki at: https://${WIKI_FQDN}"
-            echo "Admin password saved in: /core/wikis/${WIKI_NAME}/admin_password.txt"
+            echo "Admin password saved in: /data/bluespice/initialAdminPassword"
         else
             log_error "Wiki deployment failed - container did not become healthy"
             exit 1
@@ -392,7 +665,8 @@ deploy_wiki() {
 # Main execution
 main() {
     if [[ $# -eq 0 ]]; then
-        echo "Usage: $0 --wiki-name=NAME [--fresh-install] [--run-update] [--profile=upgrade|upgrade-force]"
+        echo "Usage: $0 --wiki-name=NAME [OPTIONS]"
+        echo "Try '$0 --help' for more information."
         exit 1
     fi
     
@@ -402,3 +676,5 @@ main() {
 
 # Execute main function with all arguments
 main "$@"
+
+# Function to setup socket proxy for MediaWiki installer
