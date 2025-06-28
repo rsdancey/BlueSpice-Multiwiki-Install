@@ -189,6 +189,93 @@ create_environment_file() {
     fi
 }
 
+# Email configuration file creation
+create_email_config_files() {
+    local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
+    local env_file="${wiki_dir}/.env"
+    local pre_init_file="${wiki_dir}/pre-init-settings.php"
+    local post_init_file="${wiki_dir}/post-init-settings.php"
+    
+    echo "Creating email configuration files..."
+    
+    # Read SMTP settings from .env file
+    local smtp_host smtp_port smtp_user smtp_pass smtp_idhost
+    if [[ -f "$env_file" ]]; then
+        smtp_host=$(grep "^SMTP_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
+        smtp_port=$(grep "^SMTP_PORT=" "$env_file" | cut -d= -f2 2>/dev/null || echo "587")
+        smtp_user=$(grep "^SMTP_USER=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
+        smtp_pass=$(grep "^SMTP_PASS=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
+        smtp_idhost=$(grep "^WIKI_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
+    else
+        echo "Warning: .env file not found for email configuration"
+        return 1
+    fi
+    
+    # Create pre-init-settings.php with email permissions
+    cat > "$pre_init_file" << 'PREINIT_EOF'
+<?php
+
+# Enable email permissions for users
+$wgGroupPermissions['user']['sendemail'] = true;
+$wgGroupPermissions['autoconfirmed']['sendemail'] = true;
+PREINIT_EOF
+    
+    echo "Created pre-init-settings.php with email permissions"
+    
+    # Create post-init-settings.php with email configuration (only if SMTP is configured)
+    if [[ -n "$smtp_host" && -n "$smtp_user" && -n "$smtp_pass" ]]; then
+        cat > "$post_init_file" << POSTINIT_EOF
+<?php
+
+# Override the default with a bundle of filetypes:
+$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
+'psd', 'mp3', 'xls', 'xlsx', 'doc','docx', 'mp4', 'mov', 'ico' );
+
+$wgCookieExpiration = 86400;
+$wgExtendedLoginCookieExpiration = null;
+
+# Email configuration
+\$wgPasswordSender = '$smtp_user';
+\$wgEmergencyContact = '$smtp_user';
+\$wgNoReplyAddress = '$smtp_user';
+
+# SMTP configuration
+\$wgSMTP = [
+    'host'     => '$smtp_host',
+    'IDHost'   => '$smtp_idhost',
+    'port'     => $smtp_port,
+    'auth'     => true,
+    'username' => '$smtp_user',
+    'password' => '$smtp_pass'
+];
+POSTINIT_EOF
+];
+POSTINIT_EOF
+        
+        echo "Created post-init-settings.php with SMTP configuration"
+        echo "  SMTP Host: $smtp_host"
+        echo "  SMTP User: $smtp_user"
+        echo "  Email sender: $smtp_user"
+    else
+        # Create minimal post-init file if no SMTP configured
+        cat > "$post_init_file" << 'POSTINIT_MINIMAL_EOF'
+<?php
+
+# Override the default with a bundle of filetypes:
+$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
+'psd', 'mp3', 'xls', 'xlsx', 'doc','docx', 'mp4', 'mov', 'ico' );
+
+$wgCookieExpiration = 86400;
+$wgExtendedLoginCookieExpiration = null;
+
+# Post-initialization settings
+# Add custom configurations here
+POSTINIT_MINIMAL_EOF
+        
+        echo "Created minimal post-init-settings.php (no SMTP configured)"
+    fi
+}
+
 # Wiki directory setup
 setup_wiki_directory() {
     local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
@@ -635,6 +722,7 @@ main() {
     if [[ "$SKIP_DIRECTORY_SETUP" != "true" ]]; then
         setup_wiki_directory
         create_environment_file
+        create_email_config_files
     else
         echo "Using existing directory - skipping directory and environment setup"
     fi
