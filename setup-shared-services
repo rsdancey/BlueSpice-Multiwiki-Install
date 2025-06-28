@@ -54,6 +54,99 @@ echo
 # Change to shared directory and start services
 cd "$SHARED_DIR"
 
+# Initialize database with network permissions
+initialize_database() {
+    echo -e "${BLUE}Initializing database permissions...${NC}"
+    
+    # Wait for database to be ready
+    local max_attempts=30
+    local attempt=1
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        if docker ps --filter name=bluespice-database --filter health=healthy --format "{{.Names}}" | grep -q bluespice-database; then
+            echo -e "${GREEN}✓ Database is healthy${NC}"
+            break
+        elif [[ $attempt -eq $max_attempts ]]; then
+            echo -e "${RED}❌ Database failed to become healthy${NC}"
+            return 1
+        else
+            echo "⏳ Waiting for database to be healthy (attempt $attempt/$max_attempts)..."
+            sleep 2
+            ((attempt++))
+        fi
+    done
+    
+    # Source shared environment for root password
+    if [[ -f "$SHARED_ENV" ]]; then
+        source "$SHARED_ENV"
+    else
+        echo -e "${RED}❌ Shared environment file not found${NC}"
+        return 1
+    fi
+    
+    # Initialize root user passwords for all hosts
+    echo "Setting up root user passwords for all hosts..."
+    if docker exec bluespice-database mariadb -u root -e "
+-- Set password for all existing root users
+SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$DB_ROOT_PASS');
+SET PASSWORD FOR 'root'@'127.0.0.1' = PASSWORD('$DB_ROOT_PASS');
+SET PASSWORD FOR 'root'@'::1' = PASSWORD('$DB_ROOT_PASS');
+-- Update any other root users to have the password
+UPDATE mysql.user SET authentication_string = PASSWORD('$DB_ROOT_PASS'), plugin = 'mysql_native_password' 
+WHERE User = 'root' AND Host != '%' AND Host != '%.bluespice-network' AND authentication_string = '';
+-- Create/update network root users
+CREATE USER IF NOT EXISTS 'root'@'%.bluespice-network' IDENTIFIED BY '$DB_ROOT_PASS';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%.bluespice-network' WITH GRANT OPTION;
+FLUSH PRIVILEGES;" 2>/dev/null; then
+        echo -e "${GREEN}✓ Database network permissions configured${NC}"
+    
+    # Update health check to use password
+    echo "Updating database health check to use password..."
+    sed -i "s/test: \[\"CMD\", \"mariadb\", \"-u\", \"root\", \"-e\", \"SELECT 1;\"\]/test: [\"CMD\", \"mariadb\", \"-u\", \"root\", \"-p${DB_ROOT_PASS}\", \"-e\", \"SELECT 1;\"]/" shared/docker-compose.persistent-data-services.yml
+    
+    # Restart the database container to apply new health check
+    echo "Restarting database with password-protected health check..."
+    docker restart bluespice-database
+    
+    # Wait for it to be healthy again with the new health check
+    attempt=1
+    max_attempts=20
+    while [[ $attempt -le $max_attempts ]]; do
+        if docker ps --filter name=bluespice-database --filter health=healthy --format "{{.Names}}" | grep -q bluespice-database; then
+            echo -e "${GREEN}✓ Database is healthy with password protection${NC}"
+            break
+        elif [[ $attempt -eq $max_attempts ]]; then
+            echo -e "${YELLOW}⚠ Database health check update may need manual verification${NC}"
+            break
+        else
+            echo "⏳ Waiting for password-protected health check (attempt $attempt/$max_attempts)..."
+            sleep 3
+            ((attempt++))
+        fi
+    done
+        return 0
+    else
+        echo -e "${YELLOW}⚠ Database permissions may already be configured${NC}"
+        return 0
+    fi
+}
+
 # Use the shared services management script for consistency
+# Start shared services first
 echo "Starting shared services..."
-exec "${SCRIPT_DIR}/bluespice-shared-services" up
+"${SCRIPT_DIR}/bluespice-shared-services" up -d
+
+# Check if database initialization is needed
+if docker ps --filter name=bluespice-database --format "{{.Names}}" | grep -q bluespice-database; then
+    # Wait a moment for database to start
+    sleep 3
+    initialize_database
+else
+    echo -e "${YELLOW}⚠ Database container not found - skipping initialization${NC}"
+fi
+
+echo -e "${GREEN}✓ Shared services setup complete${NC}"
+echo "Services are starting in the background."
+echo "Use './bluespice-shared-services status' to check service health."
+exit 0
+

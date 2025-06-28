@@ -120,7 +120,8 @@ validate_images_archive() {
 backup_current_images() {
     local wiki_name="$1"
     local container_name="bluespice-$wiki_name-wiki-web"
-    local backup_dir="/tmp/images_backup_$(date +%Y%m%d_%H%M%S)"
+    local backup_dir
+    backup_dir="/tmp/images_backup_$(date +%Y%m%d_%H%M%S)"
     
     print_info "Creating backup of current images directory..."
     
@@ -143,7 +144,8 @@ import_images() {
     local wiki_name="$1"
     local archive_path="$2"
     local container_name="bluespice-$wiki_name-wiki-web"
-    local temp_dir="/tmp/images_import_$(date +%Y%m%d_%H%M%S)"
+    local temp_dir
+    temp_dir="/tmp/images_import_$(date +%Y%m%d_%H%M%S)"
     
     print_info "Importing images from archive..."
     
@@ -280,8 +282,7 @@ main() {
     
     # Backup current images
     print_info "Starting images import process..."
-    backup_path=$(backup_current_images "$WIKI_NAME")
-    if [[ $? -ne 0 ]]; then
+    if ! backup_path=$(backup_current_images "$WIKI_NAME"); then
         print_error "Failed to backup current images"
         exit 1
     fi

@@ -1,0 +1,123 @@
+---
+x-common-config: &common-config
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: '1.0'
+        memory: 1G
+      reservations:
+        memory: 512M
+
+services:
+  search-permissions:
+    image: busybox:latest
+    volumes:
+      - ${DATA_DIR}/search:/data
+    command: chown -R 1000:1000 /data
+    restart: "no"
+    labels:
+      com.bluespice.service: "search-permissions"
+      com.bluespice.type: "init"
+
+  search:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/search:${VERSION}
+    container_name: bluespice-search
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    volumes:
+      - ${DATA_DIR}/search:/usr/share/opensearch/data
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "OPENSEARCH_PATH_CONF=/usr/share/opensearch/config"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: curl -f http://localhost:9200 || exit 1
+      start_period: 30s
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    depends_on:
+      search-permissions:
+        condition: service_completed_successfully
+    <<: *common-config
+    labels:
+      com.bluespice.service: "search"
+      com.bluespice.type: "persistent-data"
+
+  database-permissions:
+    image: busybox:latest
+    volumes:
+      - ${DATA_DIR}/database:/data
+    command: sh -c "chown -R 911:911 /data && chmod -R 755 /data"
+    restart: "no"
+    labels:
+      com.bluespice.service: "database-permissions"
+      com.bluespice.type: "init"
+
+  database:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/database:${VERSION}
+    container_name: bluespice-database
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    volumes:
+      - ${DATA_DIR}/database/logs:/config/log/mysql
+      - ${DATA_DIR}/database/data:/config/databases
+      - mysql-socket:/run/mysqld
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
+      - MYSQL_RANDOM_ROOT_PASSWORD=no
+      - MYSQL_ALLOW_EMPTY_PASSWORD=no
+      - MYSQL_INITDB_SKIP_TZINFO=1
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "mariadb", "-u", "root", "-p${DB_ROOT_PASS}", "-e", "SELECT 1;"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      database-permissions:
+        condition: service_completed_successfully
+    <<: *common-config
+    labels:
+      com.bluespice.service: "database"
+      com.bluespice.type: "persistent-data"
+
+  cache:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/cache:${VERSION}
+    container_name: bluespice-cache
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    healthcheck:
+      test: echo stats | nc localhost 11211 || exit 1
+      start_period: 10s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    <<: *common-config
+    labels:
+      com.bluespice.service: "cache"
+      com.bluespice.type: "persistent-data"
+
+networks:
+  bluespice-network:
+    external: true
+
+volumes:
+  mysql-socket:

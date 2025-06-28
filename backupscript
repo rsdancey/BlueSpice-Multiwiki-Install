@@ -1,0 +1,26 @@
+#!/bin/bash
+
+BACKUP_DIR="/home/alderacw/backups"
+
+WIKI_DIR="/home/alderacw/public_html/wiki"
+
+
+# Create backup directory if it doesn't exist
+
+mkdir -p "$BACKUP_DIR"
+
+
+# Generate timestamp for backup file
+
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+
+# Find and tar files modified in the last 24 hours
+
+find "$WIKI_DIR" -type f -mtime -1 -print0 | tar czf "$BACKUP_DIR/wiki_backup_$TIMESTAMP.tar.gz" --null -T -
+
+
+# Keep only last 7 days of backups
+
+find "$BACKUP_DIR" -type f -name "wiki_backup_*.tar.gz" -mtime +7 -delete
+

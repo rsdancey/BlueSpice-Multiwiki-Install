@@ -102,10 +102,8 @@ parse_arguments() {
                 exit 1
                 ;;
         esac
-        shift
     done
 }
-
 check_certificate_expiry() {
     local domain="$1"
     

@@ -235,7 +235,8 @@ remove_prefix() {
     print_info "Removing prefix '$prefix' from SQL dump..."
     
     # Escape special characters in prefix for sed - using correct pattern
-    local escaped_prefix=$(echo "$prefix" | sed 's/[][\/.^$*]/\&/g')
+    local escaped_prefix
+    escaped_prefix=$(echo "$prefix" | sed 's/[][\/.^$*]/\&/g')
     
     # Use sed to remove the prefix from table names in all SQL contexts
     if sed "s/\`${escaped_prefix}/\`/g" "$input_file" > "$output_file"; then

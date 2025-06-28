@@ -178,11 +178,7 @@ load_environment() {
         # Load shared environment for database credentials
         if [[ -f "${SCRIPT_DIR}/shared/.shared.env" ]]; then
             # shellcheck source=/dev/null
-        # Preserve wiki DATA_DIR before loading shared environment
-        WIKI_DATA_DIR="$DATA_DIR"
             source "${SCRIPT_DIR}/shared/.shared.env"
-        # Restore wiki DATA_DIR after loading shared environment
-        DATA_DIR="$WIKI_DATA_DIR"
         fi
         
         # Set default values for missing variables
@@ -239,25 +235,17 @@ parse_arguments() {
 # Create required data directories
 create_data_directories() {
     log_info "Creating required directories..."
-    # First ensure the host mount point exists
-    local data_dir="${DATA_DIR}"
-    if [[ ! -d "$data_dir" ]]; then
-        log_info "Creating host data directory: $data_dir"
-        mkdir -p "$data_dir"
-        # Set ownership to allow container access
-        chown 911:911 "$data_dir" 2>/dev/null || sudo chown 911:911 "$data_dir" || true
-    fi
     # DATA_DIR is set in sourced .env files
     
     # shellcheck disable=SC2153
     local data_dir="${DATA_DIR}"
     
     local container="${CONTAINER_PREFIX}-wiki-web"
-    docker exec "$container" mkdir -p /data/database /data/proxy /data/search /data/bluespice
-    docker exec "$container" mkdir -p /data/wiki/database /data/wiki/wiki /data/wiki/search
+    docker exec "$container" mkdir -p /data/bluespice/database /data/bluespice/proxy /data/bluespice/search /data/bluespice/bluespice
+    docker exec "$container" mkdir -p /data/bluespice/wiki/database /data/bluespice/wiki/wiki /data/bluespice/wiki/search
     
     # Create BlueSpice-specific subdirectories that containers expect
-    docker exec "$container" mkdir -p /data/bluespice/logs
+    docker exec "$container" mkdir -p /data/bluespice/bluespice/logs
     docker exec "$container" mkdir -p /data/bluespice/simplesamlphp/certs
     # Set proper ownership inside container
     docker exec "$container" chown -R 911:911 /data/bluespice/database 2>/dev/null || true
@@ -280,9 +268,8 @@ fix_data_permissions() {
     # This is mounted as /data inside the container
     sudo chown 1002:bluespice "${DATA_DIR}/bluespice" 2>/dev/null || true
     
-    # Ensure the data mount point is accessible
-    sudo chown 1002:bluespice /data 2>/dev/null || true
-    sudo chmod 777 /data 2>/dev/null || true
+    # Ensure the bluespice user can write to the mounted data directory
+    sudo chmod -R 777 /data/ 2>/dev/null || true
     
     log_info "Data directory permissions fixed"
 }
