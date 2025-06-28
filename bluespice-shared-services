@@ -120,7 +120,15 @@ main() {
     if [[ ! -d "$SHARED_DIR" ]]; then
         echo -e "${RED}❌ Error: Shared services directory not found: $SHARED_DIR${NC}" >&2
         exit 1
+
+    # Ensure the data directory exists with correct ownership
+    if [[ ! -d "/bluespice" ]]; then
+        echo "Creating data directory: /bluespice"
+        sudo mkdir -p /bluespice
     fi
+    # Set correct ownership for the data directory
+    sudo chown root:bluespice /bluespice
+    sudo chmod 775 /bluespice
     
     # Handle different commands
     case $command in
@@ -176,7 +184,7 @@ main() {
             echo -e "${RED}❌ Unknown command: $command${NC}" >&2
             echo -e "${CYAN}💡 Use '--help' to see available commands${NC}" >&2
             exit 1
-            ;;
+
     esac
 }
 

@@ -283,7 +283,7 @@ confirm_action() {
         prompt="$message (y/N): "
     fi
     
-    read -p "$prompt" -r response
+    read -r -p "$prompt" -r response
     
     if [[ -z "$response" ]]; then
         response="$default"

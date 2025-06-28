@@ -22,9 +22,9 @@ services:
     networks:
       - bluespice-network
     volumes:
-      - ${DATA_DIR}:/data
-      - mysql-socket:/run/mysqld
+      - ${DATA_DIR}/${WIKI_NAME}:/data/bluespice
     environment:
+      - WIKI_NAME=${WIKI_NAME}
       - DB_NAME=${DB_NAME}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -37,6 +37,7 @@ services:
       - WIKI_HOST=${WIKI_HOST}
       - WIKI_PROTOCOL=https
       - WIKI_SERVER=https://${WIKI_HOST}
+      - DATADIR=/data/bluespice
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-web"
@@ -50,6 +51,7 @@ services:
     entrypoint: ["/app/bin/start-task"]
     command: ["--runAll"]
     environment:
+      - WIKI_NAME=${WIKI_NAME}
       - DB_NAME=${DB_NAME}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -59,11 +61,11 @@ services:
       - WIKI_HOST=${WIKI_HOST}
       - WIKI_PROTOCOL=https
       - WIKI_SERVER=https://${WIKI_HOST}
+      - DATADIR=/data/bluespice
     networks:
       - bluespice-network
     volumes:
-      - ${DATA_DIR}:/data
-      - mysql-socket:/run/mysqld
+      - ${DATA_DIR}/${WIKI_NAME}:/data/bluespice
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-task"
@@ -74,7 +76,3 @@ networks:
   bluespice-network:
     external: true
 
-volumes:
-  mysql-socket:
-    external: true
-    name: shared_mysql-socket

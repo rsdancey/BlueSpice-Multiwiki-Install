@@ -77,7 +77,6 @@ services:
     volumes:
       - ${DATA_DIR}/database/logs:/config/log/mysql
       - ${DATA_DIR}/database/data:/config/databases
-      - mysql-socket:/run/mysqld
     environment:
       - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
       - MYSQL_RANDOM_ROOT_PASSWORD=no
@@ -85,7 +84,7 @@ services:
       - MYSQL_INITDB_SKIP_TZINFO=1
       - TZ=UTC
     healthcheck:
-      test: ["CMD", "mariadb", "-u", "root", "-p${DB_ROOT_PASS}", "-e", "SELECT 1;"]
+      test: ["CMD", "nc", "-z", "localhost", "3306"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -119,5 +118,3 @@ networks:
   bluespice-network:
     external: true
 
-volumes:
-  mysql-socket:

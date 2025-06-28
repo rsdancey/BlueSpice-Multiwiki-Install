@@ -10,7 +10,6 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Directory paths
@@ -30,13 +29,14 @@ fi
 
 # Handle email configuration
 if [[ -f "$SHARED_ENV" ]]; then
+    # shellcheck source=/dev/null
     source "$SHARED_ENV"
     CURRENT_EMAIL="${ADMIN_MAIL:-somuser@somedomain.tld}"
 else
     CURRENT_EMAIL="somuser@somedomain.tld"
 fi
 
-read -p "Enter email address for Let's Encrypt (press Enter to use existing: $CURRENT_EMAIL): " NEW_EMAIL
+read -r -p "Enter email address for Let's Encrypt (press Enter to use existing: $CURRENT_EMAIL): " NEW_EMAIL
 ADMIN_MAIL=${NEW_EMAIL:-$CURRENT_EMAIL}
 
 echo "Using admin mail: $ADMIN_MAIL"
@@ -78,6 +78,7 @@ initialize_database() {
     
     # Source shared environment for root password
     if [[ -f "$SHARED_ENV" ]]; then
+    # shellcheck source=/dev/null
         source "$SHARED_ENV"
     else
         echo -e "${RED}❌ Shared environment file not found${NC}"
@@ -100,30 +101,6 @@ GRANT ALL PRIVILEGES ON *.* TO 'root'@'%.bluespice-network' WITH GRANT OPTION;
 FLUSH PRIVILEGES;" 2>/dev/null; then
         echo -e "${GREEN}✓ Database network permissions configured${NC}"
     
-    # Update health check to use password
-    echo "Updating database health check to use password..."
-    sed -i "s/test: \[\"CMD\", \"mariadb\", \"-u\", \"root\", \"-e\", \"SELECT 1;\"\]/test: [\"CMD\", \"mariadb\", \"-u\", \"root\", \"-p${DB_ROOT_PASS}\", \"-e\", \"SELECT 1;\"]/" shared/docker-compose.persistent-data-services.yml
-    
-    # Restart the database container to apply new health check
-    echo "Restarting database with password-protected health check..."
-    docker restart bluespice-database
-    
-    # Wait for it to be healthy again with the new health check
-    attempt=1
-    max_attempts=20
-    while [[ $attempt -le $max_attempts ]]; do
-        if docker ps --filter name=bluespice-database --filter health=healthy --format "{{.Names}}" | grep -q bluespice-database; then
-            echo -e "${GREEN}✓ Database is healthy with password protection${NC}"
-            break
-        elif [[ $attempt -eq $max_attempts ]]; then
-            echo -e "${YELLOW}⚠ Database health check update may need manual verification${NC}"
-            break
-        else
-            echo "⏳ Waiting for password-protected health check (attempt $attempt/$max_attempts)..."
-            sleep 3
-            ((attempt++))
-        fi
-    done
         return 0
     else
         echo -e "${YELLOW}⚠ Database permissions may already be configured${NC}"
