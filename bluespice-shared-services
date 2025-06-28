@@ -121,6 +121,7 @@ main() {
         echo -e "${RED}❌ Error: Shared services directory not found: $SHARED_DIR${NC}" >&2
         exit 1
 
+    fi
     # Ensure the data directory exists with correct ownership
     if [[ ! -d "/bluespice" ]]; then
         echo "Creating data directory: /bluespice"
