@@ -216,8 +216,8 @@ create_email_config_files() {
 <?php
 
 # Enable email permissions for users
-$wgGroupPermissions['user']['sendemail'] = true;
-$wgGroupPermissions['autoconfirmed']['sendemail'] = true;
+\$wgGroupPermissions['user']['sendemail'] = true;
+\$wgGroupPermissions['autoconfirmed']['sendemail'] = true;
 PREINIT_EOF
     
     echo "Created pre-init-settings.php with email permissions"
@@ -228,11 +228,11 @@ PREINIT_EOF
 <?php
 
 # Override the default with a bundle of filetypes:
-$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
+\$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
 'psd', 'mp3', 'xls', 'xlsx', 'doc','docx', 'mp4', 'mov', 'ico' );
 
-$wgCookieExpiration = 86400;
-$wgExtendedLoginCookieExpiration = null;
+\$wgCookieExpiration = 86400;
+\$wgExtendedLoginCookieExpiration = null;
 
 # Email configuration
 \$wgPasswordSender = '$smtp_user';
@@ -249,8 +249,6 @@ $wgExtendedLoginCookieExpiration = null;
     'password' => '$smtp_pass'
 ];
 POSTINIT_EOF
-];
-POSTINIT_EOF
         
         echo "Created post-init-settings.php with SMTP configuration"
         echo "  SMTP Host: $smtp_host"
@@ -262,11 +260,11 @@ POSTINIT_EOF
 <?php
 
 # Override the default with a bundle of filetypes:
-$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
+\$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
 'psd', 'mp3', 'xls', 'xlsx', 'doc','docx', 'mp4', 'mov', 'ico' );
 
-$wgCookieExpiration = 86400;
-$wgExtendedLoginCookieExpiration = null;
+\$wgCookieExpiration = 86400;
+\$wgExtendedLoginCookieExpiration = null;
 
 # Post-initialization settings
 # Add custom configurations here
