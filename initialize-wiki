@@ -189,6 +189,33 @@ create_environment_file() {
     fi
 }
 
+# Check if email configuration is missing and prompt for it
+check_and_prompt_email_config() {
+    local env_file="$1"
+    local smtp_host smtp_user smtp_pass
+    
+    if [[ -f "$env_file" ]]; then
+        smtp_host=$(grep "^SMTP_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
+        smtp_user=$(grep "^SMTP_USER=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
+        smtp_pass=$(grep "^SMTP_PASS=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
+        
+        # If any email config is missing, prompt for it
+        if [[ -z "$smtp_host" || -z "$smtp_user" || -z "$smtp_pass" ]]; then
+            echo "Email configuration incomplete in .env file."
+            echo "Missing SMTP configuration detected. Please provide email settings:"
+            echo
+            configure_smtp
+            
+            # Update the .env file with new SMTP settings
+            sed -i "s/SMTP_HOST_PLACEHOLDER/${SMTP_HOST}/g" "$env_file"
+            sed -i "s/SMTP_PORT_PLACEHOLDER/${SMTP_PORT}/g" "$env_file"
+            sed -i "s/SMTP_USER_PLACEHOLDER/${SMTP_USER}/g" "$env_file"
+            sed -i "s/SMTP_PASS_PLACEHOLDER/${SMTP_PASS}/g" "$env_file"
+        fi
+    fi
+}
+
+
 # Email configuration file creation
 create_email_config_files() {
     local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
@@ -197,6 +224,9 @@ create_email_config_files() {
     local post_init_file="${wiki_dir}/post-init-settings.php"
     
     echo "Creating email configuration files..."
+    
+    # Check and prompt for missing email configuration
+    check_and_prompt_email_config "$env_file"
     
     # Read SMTP settings from .env file
     local smtp_host smtp_port smtp_user smtp_pass smtp_idhost
