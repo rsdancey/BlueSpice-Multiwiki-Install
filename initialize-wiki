@@ -207,10 +207,10 @@ check_and_prompt_email_config() {
             configure_smtp
             
             # Update the .env file with new SMTP settings
-            sed -i "s/SMTP_HOST_PLACEHOLDER/${SMTP_HOST}/g" "$env_file"
-            sed -i "s/SMTP_PORT_PLACEHOLDER/${SMTP_PORT}/g" "$env_file"
-            sed -i "s/SMTP_USER_PLACEHOLDER/${SMTP_USER}/g" "$env_file"
-            sed -i "s/SMTP_PASS_PLACEHOLDER/${SMTP_PASS}/g" "$env_file"
+            sed -i "s/^SMTP_HOST=.*/SMTP_HOST=${SMTP_HOST}/" "$env_file"
+            sed -i "s/^SMTP_PORT=.*/SMTP_PORT=${SMTP_PORT}/" "$env_file"
+            sed -i "s/^SMTP_USER=.*/SMTP_USER=${SMTP_USER}/" "$env_file"
+            sed -i "s/^SMTP_PASS=.*/SMTP_PASS=${SMTP_PASS}/" "$env_file"
         fi
     fi
 }
