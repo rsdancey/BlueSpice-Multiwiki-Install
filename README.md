@@ -31,6 +31,7 @@ The deployment system creates containerized BlueSpice MediaWiki installations wi
 
 ### Main Scripts
 
+- **`setup-shared-services`** - Creates the basic filesystem structures, configures & installs shared services
 - **`initialize-wiki`** - Primary deployment script that creates a new wiki instance
 - **`bluespice-deploy-wiki`** - Core deployment logic called by initialize-wiki
 
