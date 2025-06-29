@@ -55,20 +55,14 @@ This will:
 3. Set global environment variables used by all BlueSpice wikis
 
 ```console
-./initialize-wiki <WIKI_NAME>
-```
-
-Example:
-```console
-./initialize-wiki Test1
+./initialize-wiki
 ```
 
 This will:
-1. Create the wiki container `bluespice-Test1-wiki-web`
-2. Set up database `Test1_wiki` with isolated user `Test1_user`
-3. Configure SSL certificate for `Test1.yourdomain.tld`
+1. Create the wiki container
+2. Set up database with isolated user
+3. Configure SSL certificate
 4. Install MediaWiki with BlueSpice extensions
-5. Apply socket-based database connectivity
 6. Generate admin credentials
 
 ### Access Your Wiki
