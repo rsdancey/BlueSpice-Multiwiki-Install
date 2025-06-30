@@ -67,7 +67,7 @@ This will:
 
 ### Access Your Wiki
 
-- URL: `https://${WIKI_NAME}.alderac.com`
+- URL: `https://${WIKI_NAME}.yourdomain.tld`
 - Admin username: `WikiSysop`
 - Admin password: Retrieved via `docker exec bluespice-${WIKI_NAME}-wiki-web cat /data/bluespice/initialAdminPassword`
 
