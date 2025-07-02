@@ -254,7 +254,7 @@ You can also add and load Extensions here if you wish to use them; you will inst
 
 ---
 
-This Deployment System was created by Ryan S. Dancey and is derived from the BlueSpice deployment system created by Hallo Walt!.
+This Deployment System was created by Ryan S. Dancey and is derived from the BlueSpice deployment system created by Hallo Welt!.
 
 You can access the git repository for this project [here](https://github.com/rsdancey/BlueSpice-Multiwiki-Install?tab=readme-ov-file).
 
