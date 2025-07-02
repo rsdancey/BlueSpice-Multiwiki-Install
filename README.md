@@ -45,6 +45,33 @@ Each wiki deployment consists of:
 
 ### Simple Directions
 
+Set up your computer (assumes debian, if different OS then make necessary changes):
+
+```console
+mkgroup bluespice
+cd /.
+sudo mkdir core
+sudo chgrp bluespice core
+sudo chmod 776 core
+cd core
+mkdir core_install
+sudo chgrp bluespice core_install
+cd core_install
+sudo apt-get install ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update && sudo apt-get install docker-compose-plugin
+sudo usermod --append --groups docker [ YOUR USERNAME ]
+git init
+git remote add origin https://github.com/rsdancey/BlueSpice-Multiwiki-Install.git
+git branch -M main
+git pull origin main
+```
+
+Next, run the setup script:
+
 ```console
 ./setup-shared-services
 ```
@@ -53,6 +80,8 @@ This will:
 1. Download and check files from the [BlueSpice Project](https://en.wiki.bluespice.com/wiki/Setup:Installation_Guide)
 2. Install and configure critical systems shared by all BlueSpice wikis on the system
 3. Set global environment variables used by all BlueSpice wikis
+
+Next, create and initialize a wiki:
 
 ```console
 ./initialize-wiki
