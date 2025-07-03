@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Images Import Script for BlueSpice Wiki
-# Imports and replaces images directory from a zipped archive
+# Images Import Script for BlueSpice Wiki (Version 2)
+# Fixes ownership issues by handling permissions on host side
 
 # Color codes for output
 RED='\033[0;31m'
@@ -139,7 +139,14 @@ backup_current_images() {
     fi
 }
 
-# Function to import images
+# Function to get the correct UID for bluespice user
+get_bluespice_uid() {
+    local container_name="$1"
+    # Get the UID of the bluespice user inside the container
+    docker exec "$container_name" id -u bluespice 2>/dev/null || echo "1002"
+}
+
+# Function to import images with proper ownership
 import_images() {
     local wiki_name="$1"
     local archive_path="$2"
@@ -148,6 +155,11 @@ import_images() {
     temp_dir="/tmp/images_import_$(date +%Y%m%d_%H%M%S)"
     
     print_info "Importing images from archive..."
+    
+    # Get the bluespice UID
+    local bluespice_uid
+    bluespice_uid=$(get_bluespice_uid "$container_name")
+    print_info "BlueSpice user UID: $bluespice_uid"
     
     # Create temporary directory
     mkdir -p "$temp_dir"
@@ -179,9 +191,30 @@ import_images() {
     
     print_info "Found images source: $images_source"
     
+    # Fix ownership of extracted files on host BEFORE copying to container
+    print_info "Fixing ownership of extracted files..."
+    if command -v chown >/dev/null 2>&1; then
+        # Try to change ownership to match bluespice user
+        # Note: This might require sudo depending on current user permissions
+        if ! chown -R "$bluespice_uid:$bluespice_uid" "$images_source" 2>/dev/null; then
+            print_warning "Could not change ownership as current user, trying with sudo..."
+            if command -v sudo >/dev/null 2>&1; then
+                if sudo chown -R "$bluespice_uid:$bluespice_uid" "$images_source" 2>/dev/null; then
+                    print_success "Ownership fixed using sudo"
+                else
+                    print_warning "Could not fix ownership with sudo, continuing anyway..."
+                fi
+            else
+                print_warning "sudo not available, continuing with original ownership..."
+            fi
+        else
+            print_success "Ownership fixed successfully"
+        fi
+    fi
+    
     # Clear current images directory in container
     print_info "Clearing current images directory..."
-    if ! docker exec "$container_name" sh -c "rm -rf /app/bluespice/w/images/* /app/bluespice/w/images/.[^.]*"; then
+    if ! docker exec "$container_name" sh -c "rm -rf /app/bluespice/w/images/* /app/bluespice/w/images/.[^.]*" 2>/dev/null; then
         print_warning "Could not fully clear images directory (some files may be in use)"
     fi
     
@@ -195,12 +228,16 @@ import_images() {
         return 1
     fi
     
-    # Fix permissions
-    print_info "Fixing images directory permissions..."
-    docker exec "$container_name" chown -R bluespice:bluespice /app/bluespice/w/images/
-    docker exec "$container_name" chmod -R 755 /app/bluespice/w/images/
+    # Final ownership fix inside container as backup
+    print_info "Ensuring correct ownership inside container..."
+    docker exec "$container_name" sh -c "chown -R bluespice:bluespice /app/bluespice/w/images/ 2>/dev/null || true"
+    docker exec "$container_name" sh -c "chmod -R 755 /app/bluespice/w/images/ 2>/dev/null || true"
     
-    # Clean up
+    # Verify ownership was fixed
+    print_info "Verifying ownership and permissions..."
+    docker exec "$container_name" ls -la /app/bluespice/w/images/ | head -5
+    
+    # Clean up temporary directory
     rm -rf "$temp_dir"
     
     return 0
@@ -215,29 +252,40 @@ rebuild_images_database() {
     
     # Run importImages.php maintenance script to register images in database
     print_info "Running importImages.php to register all images..."
-    if docker exec "$container_name" php /app/bluespice/w/maintenance/importImages.php --search-recursively --overwrite /app/bluespice/w/images/; then
+    if docker exec --user bluespice "$container_name" php /app/bluespice/w/maintenance/importImages.php --search-recursively --overwrite /app/bluespice/w/images/; then
         print_success "Images imported into database successfully"
     else
         print_error "Failed to import images into database"
-        return 1
+        print_info "Trying alternative approach..."
+        
+        # Try running as root user in case of permission issues
+        if docker exec "$container_name" php /app/bluespice/w/maintenance/importImages.php --search-recursively --overwrite /app/bluespice/w/images/; then
+            print_success "Images imported into database successfully (as root)"
+        else
+            print_error "Database import failed even as root user"
+            return 1
+        fi
     fi
     
     print_info "Running rebuildImages.php to synchronize database..."
     
     # Run RebuildImages.php maintenance script
-    if docker exec "$container_name" php /app/bluespice/w/maintenance/rebuildImages.php; then
+    if docker exec --user bluespice "$container_name" php /app/bluespice/w/maintenance/rebuildImages.php 2>/dev/null; then
         print_success "Images database synchronized successfully"
         return 0
+    elif docker exec "$container_name" php /app/bluespice/w/maintenance/rebuildImages.php 2>/dev/null; then
+        print_success "Images database synchronized successfully (as root)"
+        return 0
     else
-        print_error "Failed to synchronize images database"
-        return 1
+        print_warning "Failed to synchronize images database, but import may still be successful"
+        return 0
     fi
 }
 
 # Main function
 main() {
-    print_info "BlueSpice Wiki Images Import Tool"
-    print_info "================================="
+    print_info "BlueSpice Wiki Images Import Tool (v2)"
+    print_info "======================================"
     
     # Get wiki name if not provided
     if [[ -z "$WIKI_NAME" ]]; then
@@ -298,14 +346,13 @@ main() {
     
     # Rebuild images database
     if ! rebuild_images_database "$WIKI_NAME"; then
-        print_warning "Images imported but database registration failed"
-        print_info "You may need to run this manually:"
-        print_info "docker exec bluespice-$WIKI_NAME-wiki-web php /app/bluespice/w/maintenance/importImages.php --search-recursively --overwrite /app/bluespice/w/images/"
+        print_warning "Images imported but database registration had issues"
+        print_info "You may need to check the wiki manually"
     fi
     
-    print_success "Images import completed successfully!"
+    print_success "Images import process completed!"
     print_info "Backup of previous images: $backup_path"
-    print_info "Wiki images have been updated, imported into database, and synchronized"
+    print_info "Wiki images have been updated and database import attempted"
 }
 
 # Run main function if script is executed directly
