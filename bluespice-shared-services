@@ -61,6 +61,20 @@ run_docker_compose() {
     docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" $command
 }
 
+# Display service status using docker compose up format
+show_services_status() {
+    echo
+    echo -e "${CYAN}🔍 Checking service health status...${NC}"
+    echo -e "${CYAN}====================================${NC}"
+    echo
+    
+    # Get current status using docker compose up -d (no-op if already running)
+    cd "$SHARED_DIR"
+    source_environment
+    mapfile -t COMPOSE_FILES < <(build_compose_args)
+    docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" up -d
+}
+
 # Show help
 show_help() {
     cat << 'HELP'
@@ -105,6 +119,7 @@ NOTES:
     This script is a minimal wrapper that preserves Docker Compose's native behavior.
 HELP
 }
+
 
 # Main function
 main() {
@@ -188,21 +203,6 @@ main() {
 
     esac
 }
-
-# Display service status using docker compose up format
-show_services_status() {
-    echo
-    echo -e "${CYAN}🔍 Checking service health status...${NC}"
-    echo -e "${CYAN}====================================${NC}"
-    echo
-    
-    # Get current status using docker compose up -d (no-op if already running)
-    cd "$SHARED_DIR"
-    source_environment
-    mapfile -t COMPOSE_FILES < <(build_compose_args)
-    docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" up -d
-}
-
 
 # Run main function with all arguments
 main "$@"
