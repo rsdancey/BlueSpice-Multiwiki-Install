@@ -522,6 +522,15 @@ INIT_EOF
 ];
 SMTP_EOF
 
+
+    # Append guarded auth extensions so maintenance/CLI can run in task container
+    cat >> /tmp/post-init-settings.php <<'AUTH_EOF'
+# Load web-only auth integrations (skip for CLI/maintenance)
+if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
+    wfLoadExtension( 'PluggableAuth' );
+    wfLoadExtension( 'OpenIDConnect' );
+}
+AUTH_EOF
     sudo cp /tmp/post-init-settings.php "${DATA_DIR}/${WIKI_NAME}/post-init-settings.php" && sudo rm -f /tmp/post-init-settings.php
     
     log_info "BlueSpice initialization files created"

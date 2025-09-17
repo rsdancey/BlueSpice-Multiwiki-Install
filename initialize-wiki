@@ -310,6 +310,15 @@ PREINIT_EOF
 ];
 POSTINIT_EOF
         
+
+        # Append guarded auth extensions so maintenance/CLI can run in task container
+        cat >> \"$post_init_file\" <<'AUTH_EOF'
+# Load web-only auth integrations (skip for CLI/maintenance)
+if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
+    wfLoadExtension( 'PluggableAuth' );
+    wfLoadExtension( 'OpenIDConnect' );
+}
+AUTH_EOF
         echo "Created post-init-settings.php with SMTP configuration"
         echo "  SMTP Host: $smtp_host"
         echo "  SMTP User: $smtp_user"
@@ -330,6 +339,15 @@ POSTINIT_EOF
 # Add custom configurations here
 POSTINIT_MINIMAL_EOF
         
+
+        # Append guarded auth extensions so maintenance/CLI can run in task container
+        cat >> \"$post_init_file\" <<'AUTH_EOF'
+# Load web-only auth integrations (skip for CLI/maintenance)
+if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
+    wfLoadExtension( 'PluggableAuth' );
+    wfLoadExtension( 'OpenIDConnect' );
+}
+AUTH_EOF
         echo "Created minimal post-init-settings.php (no SMTP configured)"
     fi
 }
