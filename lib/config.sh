@@ -156,43 +156,84 @@ save_configuration() {
     
     echo "💾 Saving configuration to $env_file..."
     
+    # Generate secure passwords
+    local db_password
+    local db_root_password
+    db_password=$(openssl rand -base64 16 | tr -d "=+/")
+    db_root_password=$(openssl rand -base64 16 | tr -d "=+/")
+    
     # Create environment file with all configuration
     cat > "$env_file" << EOF
 # BlueSpice Wiki Configuration
 # Generated on $(date)
 
-# Wiki Settings
+# Wiki Configuration
 WIKI_NAME=$WIKI_NAME
 WIKI_HOST=$WIKI_DOMAIN
 WIKI_LANG=$WIKI_LANG
 
-# Database Settings
+# Database Configuration
+DB_HOST=database
+DB_PORT=3306
 DB_NAME=${WIKI_NAME}_wiki
 DB_USER=${WIKI_NAME}_user
-DB_PASS=$(openssl rand -base64 16 | tr -d "=+/")
-DB_HOST=bluespice-database
-DB_PORT=3306
+DB_PASS=$db_password
+DB_ROOT_PASS=$db_root_password
 
-# SMTP Configuration
+# Version and Edition
+VERSION=5.1
+EDITION=free
+
+# Service Repository (needed for docker-compose)
+BLUESPICE_SERVICE_REPOSITORY=bluespice
+
+# Data Directory (for this wiki)
+DATA_DIR=/bluespice
+
+# Web Configuration
+VIRTUAL_PROTO=http
+HTTP_PORT=80
+HTTPS_PORT=443
+
+# SSL/TLS Configuration
+HTTPS_METHOD=redirect
+ENABLE_HSTS=true
+HSTS_SUBDOMAINS=true
+SSL_POLICY=Mozilla-Modern
+
+# Let's Encrypt Configuration
+LETSENCRYPT_TEST=false
+ACME_CA_URI=https://acme-v02.api.letsencrypt.org/directory
+RENEWAL_INTERVAL=3600
+
+# Resource Limits
+UPLOAD_MAX_SIZE=100m
+
+# IPv6 Support
+ENABLE_IPV6=true
+
+# Email settings
 SMTP_HOST=$SMTP_HOST
 SMTP_PORT=$SMTP_PORT
 SMTP_USER=$SMTP_USER
 SMTP_PASS=$SMTP_PASS
+SMTP_ID_HOST=$WIKI_DOMAIN
 
-# Data Directory
-DATA_DIR=/bluespice
+# Proxy Configuration
+VIRTUAL_HOST=$WIKI_DOMAIN
+VIRTUAL_PORT=9090
+LETSENCRYPT_HOST=$WIKI_DOMAIN
+ADMIN_MAIL=$SMTP_USER
 
-# BlueSpice Settings
-VERSION=${VERSION:-5.1}
-EDITION=${EDITION:-free}
-BLUESPICE_SERVICE_REPOSITORY=${BLUESPICE_SERVICE_REPOSITORY:-docker.bluespice.com/bluespice}
-
-# Container Settings
-CONTAINER_PREFIX=bluespice-${WIKI_NAME}
+# Container Configuration
+CONTAINER_PREFIX=bluespice-$WIKI_NAME
+BLUESPICE_WIKI_IMAGE=bluespice/wiki:5.1
 
 # SSL Configuration
 SSL_ENABLED=$SSL_ENABLED
 EOF
 
     echo "✅ Configuration saved successfully"
+    echo "  📊 Generated database passwords for security"
+    echo "  🔧 All required environment variables configured"
 }

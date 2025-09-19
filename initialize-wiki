@@ -7,14 +7,30 @@ set -euo pipefail
 
 # Script directory and paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Ensure SCRIPT_DIR is correctly resolved
+if [[ ! -d "$SCRIPT_DIR" ]]; then
+    echo "Error: Could not determine script directory" >&2
+    exit 1
+fi
 WIKIS_DIR="$(dirname "${SCRIPT_DIR}")/wikis"
 TEMPLATE_DIR="${SCRIPT_DIR}/wiki-template"
 
-# Source modular libraries
-source "${SCRIPT_DIR}/lib/validation.sh"
-source "${SCRIPT_DIR}/lib/config.sh"
-source "${SCRIPT_DIR}/lib/docker-utils.sh"
-source "${SCRIPT_DIR}/lib/oauth-config.sh"
+# Debug: Show resolved paths (can be removed later)
+if [[ "${DEBUG:-}" == "true" ]]; then
+    echo "DEBUG: SCRIPT_DIR = $SCRIPT_DIR"
+    echo "DEBUG: WIKIS_DIR = $WIKIS_DIR"
+    echo "DEBUG: TEMPLATE_DIR = $TEMPLATE_DIR"
+fi
+
+# Source modular libraries with error checking
+for lib in validation config docker-utils oauth-config; do
+    lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
+    if [[ ! -f "$lib_path" ]]; then
+        echo "Error: Required library not found: $lib_path" >&2
+        exit 1
+    fi
+    source "$lib_path"
+done
 
 # Default values
 WIKI_NAME=""
