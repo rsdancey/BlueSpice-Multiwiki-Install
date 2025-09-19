@@ -6,9 +6,8 @@
 set -euo pipefail
 
 # Source required libraries
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/docker-utils.sh"
-source "${SCRIPT_DIR}/validation.sh"
+source "${SCRIPT_DIR}/lib/docker-utils.sh"
+source "${SCRIPT_DIR}/lib/validation.sh"
 
 # Get consistent post-init file path
 get_post_init_file_path() {

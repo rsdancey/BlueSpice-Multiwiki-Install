@@ -179,10 +179,16 @@ SMTP_PORT=$SMTP_PORT
 SMTP_USER=$SMTP_USER
 SMTP_PASS=$SMTP_PASS
 
+# Data Directory
+DATA_DIR=/bluespice
+
 # BlueSpice Settings
 VERSION=${VERSION:-5.1}
 EDITION=${EDITION:-free}
 BLUESPICE_SERVICE_REPOSITORY=${BLUESPICE_SERVICE_REPOSITORY:-docker.bluespice.com/bluespice}
+
+# Container Settings
+CONTAINER_PREFIX=bluespice-${WIKI_NAME}
 
 # SSL Configuration
 SSL_ENABLED=$SSL_ENABLED
