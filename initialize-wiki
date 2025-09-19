@@ -194,10 +194,43 @@ create_environment_file() {
         echo "Creating environment file from template..."
         
         # Generate unique database user for this wiki
-        local db_user
-        db_user="${WIKI_NAME}_user"
+        local db_user="${WIKI_NAME}_user"
         # Generate random password
-        db_password=$(openssl rand -base64 16 | tr -d "=+/")
+        local db_password=$(openssl rand -base64 16 | tr -d "=+/")
+        
+        # Copy template and replace placeholders
+        cp "$template_file" "$env_file"
+        
+        # Update the .env file with wiki-specific values
+        # Replace wiki configuration placeholders
+        sed -i "s/WIKI_NAME_PLACEHOLDER/${WIKI_NAME}/g" "$env_file"
+        sed -i "s/WIKI_DOMAIN_PLACEHOLDER/${WIKI_DOMAIN}/g" "$env_file"
+        sed -i "s/WIKI_LANG_PLACEHOLDER/${WIKI_LANG}/g" "$env_file"
+        
+        # Replace SMTP placeholders
+        sed -i "s/SMTP_HOST_PLACEHOLDER/${SMTP_HOST}/g" "$env_file"
+        sed -i "s/SMTP_PORT_PLACEHOLDER/${SMTP_PORT}/g" "$env_file"
+        sed -i "s/SMTP_USER_PLACEHOLDER/${SMTP_USER}/g" "$env_file"
+        sed -i "s/SMTP_PASS_PLACEHOLDER/${SMTP_PASS}/g" "$env_file"
+        
+        sed -i "s/DB_NAME=.*/DB_NAME=${WIKI_NAME}/" "$env_file"
+        sed -i "s/DB_USER=.*/DB_USER=${db_user}/" "$env_file"
+        sed -i "s/DB_PASS=.*/DB_PASS=${db_password}/" "$env_file"
+        
+        echo "Environment file created successfully"
+    else
+        echo "Warning: Template file not found at $template_file"
+        echo "Creating basic environment file..."
+        
+        # Create a basic .env file
+        cat > "$env_file" << ENVFILE
+DB_NAME=${WIKI_NAME}
+DB_USER=${WIKI_NAME}_user
+DB_PASS=$(openssl rand -base64 16 | tr -d "=+/")
+ENVFILE
+    fi
+}
+
 
 # =============================================================================
 # Authentication Extension Installation Functions
@@ -582,29 +615,6 @@ $wgOpenIDConnect_UseRealNameAsUserName = false;
 OAUTH_PLACEHOLDER_EOF
     fi
 }
-
-        
-        # Copy template and substitute variables
-        sed \
-            -e "s/WIKI_NAME_PLACEHOLDER/${WIKI_NAME}/g" \
-            -e "s/WIKI_DOMAIN_PLACEHOLDER/${WIKI_DOMAIN}/g" \
-            -e "s/WIKI_LANG_PLACEHOLDER/${WIKI_LANG}/g" \
-            -e "s/WIKI_DB_PASSWORD_PLACEHOLDER/${db_password}/g" \
-            -e "s/WIKI_DB_USER_PLACEHOLDER/${db_user}/g" \
-            -e "s/SMTP_HOST_PLACEHOLDER/${SMTP_HOST}/g" \
-            -e "s/SMTP_PORT_PLACEHOLDER/${SMTP_PORT}/g" \
-            -e "s/SMTP_USER_PLACEHOLDER/${SMTP_USER}/g" \
-            -e "s/SMTP_PASS_PLACEHOLDER/${SMTP_PASS}/g" \
-            "$template_file" > "$env_file"
-        
-        echo "Environment file created: $env_file"
-    else
-        echo "Error: Template file not found: $template_file" >&2
-        exit 1
-    fi
-}
-
-# Check if email configuration is missing and prompt for it
 check_and_prompt_email_config() {
     local env_file="$1"
     local smtp_host smtp_user smtp_pass
