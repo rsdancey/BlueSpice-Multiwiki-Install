@@ -10,6 +10,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKIS_DIR="$(dirname "${SCRIPT_DIR}")/wikis"
 TEMPLATE_DIR="${SCRIPT_DIR}/wiki-template"
 
+# Source modular libraries
+source "${SCRIPT_DIR}/lib/validation.sh"
+source "${SCRIPT_DIR}/lib/config.sh"
+source "${SCRIPT_DIR}/lib/docker-utils.sh"
+source "${SCRIPT_DIR}/lib/oauth-config.sh"
+
 # Default values
 WIKI_NAME=""
 WIKI_DOMAIN=""
@@ -17,8 +23,30 @@ WIKI_LANG="en"
 SETUP_MODE=""
 SKIP_DIRECTORY_SETUP=false
 SSL_ENABLED=false
+SMTP_HOST=""
+SMTP_PORT="587"
+SMTP_USER=""
+SMTP_PASS=""
 
-# SSL Certificate functions
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Logging functions
+log_info() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}✗${NC} $1" >&2
+}
 # Help function
 show_help() {
     cat << 'HELP'
@@ -134,6 +162,7 @@ parse_arguments() {
         esac
     done
 }
+# Certificate expiry checking (keeping existing function)
 check_certificate_expiry() {
     local domain="$1"
     
@@ -145,90 +174,38 @@ check_certificate_expiry() {
         days_until_expiry=$(( (expiry_epoch - current_epoch) / 86400 ))
         
         if [[ $days_until_expiry -lt 30 ]]; then
-            echo "Warning: SSL certificate expires in $days_until_expiry days"
+            log_warn "SSL certificate expires in $days_until_expiry days"
             return 1
         else
-            echo "SSL certificate valid for $days_until_expiry days"
+            log_info "SSL certificate valid for $days_until_expiry days"
             return 0
         fi
     else
-        echo "No SSL certificate found for $domain"
+        log_warn "No SSL certificate found for $domain"
         return 1
     fi
 }
 
 
-# SMTP password validation function
-validate_smtp_pass() {
-    local password="$1"
-    # Check if password contains spaces
-    if [[ "$password" =~ [[:space:]] ]]; then
-        return 1
-    fi
-    return 0
-}
-
-
-# SMTP host validation function
-validate_smtp_host() {
-    local host="$1"
-    # Check if host follows basic hostname format
-    if [[ ! "$host" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
-        return 1
-    fi
-    # Check if host contains at least one dot (domain format)
-    if [[ ! "$host" =~ . ]]; then
-        return 1
-    fi
-    return 0
-}
-
-
-# Environment file creation
+# Environment file creation (updated to use config library)
 create_environment_file() {
     local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
-    local env_file="${wiki_dir}/.env"
-    local template_file="${TEMPLATE_DIR}/.env.template"
     
-    if [[ -f "$template_file" ]]; then
-        echo "Creating environment file from template..."
-        
-        # Generate unique database user for this wiki
-        local db_user="${WIKI_NAME}_user"
-        # Generate random password
-        local db_password=$(openssl rand -base64 16 | tr -d "=+/")
-        
-        # Copy template and replace placeholders
-        cp "$template_file" "$env_file"
-        
-        # Update the .env file with wiki-specific values
-        # Replace wiki configuration placeholders
-        sed -i "s/WIKI_NAME_PLACEHOLDER/${WIKI_NAME}/g" "$env_file"
-        sed -i "s/WIKI_DOMAIN_PLACEHOLDER/${WIKI_DOMAIN}/g" "$env_file"
-        sed -i "s/WIKI_LANG_PLACEHOLDER/${WIKI_LANG}/g" "$env_file"
-        
-        # Replace SMTP placeholders
-        sed -i "s/SMTP_HOST_PLACEHOLDER/${SMTP_HOST}/g" "$env_file"
-        sed -i "s/SMTP_PORT_PLACEHOLDER/${SMTP_PORT}/g" "$env_file"
-        sed -i "s/SMTP_USER_PLACEHOLDER/${SMTP_USER}/g" "$env_file"
-        sed -i "s/SMTP_PASS_PLACEHOLDER/${SMTP_PASS}/g" "$env_file"
-        
-        sed -i "s/DB_NAME=.*/DB_NAME=${WIKI_NAME}/" "$env_file"
-        sed -i "s/DB_USER=.*/DB_USER=${db_user}/" "$env_file"
-        sed -i "s/DB_PASS=.*/DB_PASS=${db_password}/" "$env_file"
-        
-        echo "Environment file created successfully"
-    else
-        echo "Warning: Template file not found at $template_file"
-        echo "Creating basic environment file..."
-        
-        # Create a basic .env file
-        cat > "$env_file" << ENVFILE
-DB_NAME=${WIKI_NAME}
-DB_USER=${WIKI_NAME}_user
-DB_PASS=$(openssl rand -base64 16 | tr -d "=+/")
-ENVFILE
+    log_info "Creating environment file with configuration..."
+    
+    # Ensure wiki directory exists
+    if [[ ! -d "$wiki_dir" ]]; then
+        log_error "Wiki directory does not exist: $wiki_dir"
+        return 1
     fi
+    
+    # Use the new configuration management
+    if ! save_configuration "$wiki_dir"; then
+        log_error "Failed to create environment configuration"
+        return 1
+    fi
+    
+    log_info "Environment file created successfully"
 }
 
 
@@ -755,33 +732,42 @@ setup_wiki_directory() {
     echo "Wiki directory prepared"
 }
 
-# Wiki deployment
+# Wiki deployment with improved OAuth extension handling
 deploy_wiki() {
     local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
     
-    echo "Deploying wiki instance..."
+    log_info "Deploying wiki instance..."
     
     cd "$wiki_dir"
     
     # Deploy with fresh installation
     if ! "${SCRIPT_DIR}/bluespice-deploy-wiki" \
         --wiki-name="$WIKI_NAME" \
-         \
         --fresh-install; then
-        echo "Error: Wiki deployment failed" >&2
+        log_error "Wiki deployment failed"
         exit 1
     fi
     
-    echo "Wiki deployed successfully"
+    log_info "Wiki deployed successfully"
 
-    # Install authentication extensions after deployment
-    if check_auth_extensions_needed "$WIKI_NAME"; then
-        echo "Installing authentication extensions..."
-        install_auth_extensions "$WIKI_NAME"
-        if [ $? -ne 0 ]; then
-            echo "WARNING: Failed to install authentication extensions. They may need to be installed manually."
-        fi
+    # Wait for container to be fully ready before installing extensions
+    log_info "Waiting for wiki container to be ready..."
+    if ! wait_for_container_ready "$WIKI_NAME" 60; then
+        log_error "Container failed to become ready - OAuth extensions cannot be installed"
+        log_warn "You may need to install OAuth extensions manually later"
+        return 0
     fi
+
+    # Install and configure OAuth extensions using the new modular system
+    log_info "Setting up OAuth extensions..."
+    if ! setup_oauth_extensions "$WIKI_NAME" "$WIKI_DOMAIN"; then
+        log_error "CRITICAL: OAuth extension setup failed"
+        log_warn "Wiki is functional but OAuth authentication will not work"
+        log_warn "Manual intervention may be required"
+        return 1
+    fi
+    
+    log_info "OAuth extension setup completed successfully"
 }
 
 # SSL setup
@@ -974,130 +960,115 @@ show_completion_info() {
     echo
 }
 
-# Main execution
+# Main execution with improved validation and error handling
 main() {
     # Parse command line arguments
     parse_arguments "$@"
 
-    echo "BlueSpice Wiki Initialization Wizard"
-    echo "======================================"
+    echo "🚀 BlueSpice Wiki Initialization Wizard"
+    echo "========================================"
     echo
     
-    # Get wiki name with proper directory checking
+    # Get wiki name with proper validation
     while [[ -z "$WIKI_NAME" ]]; do
-        printf "Enter wiki name (alphanumeric, dots, dashes, underscores, no spaces): "; read -r WIKI_NAME
-        if [[ ! "$WIKI_NAME" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-            echo "Error: Wiki name must be alphanumeric, dots, dashes, underscores with no spaces" >&2
+        printf "Enter wiki name (alphanumeric, dots, dashes, underscores, no spaces): "
+        read -r WIKI_NAME
+        
+        if ! validate_wiki_name "$WIKI_NAME"; then
             WIKI_NAME=""
-        elif [[ -d "${WIKIS_DIR}/${WIKI_NAME}" ]]; then
+            continue
+        fi
+        
+        # Check for existing directory
+        if [[ -d "${WIKIS_DIR}/${WIKI_NAME}" ]]; then
             echo
-            echo "Warning: Wiki directory '${WIKIS_DIR}/${WIKI_NAME}' already exists"
+            log_warn "Wiki directory '${WIKIS_DIR}/${WIKI_NAME}' already exists"
             echo "This may contain data from a previous installation."
             echo
-            printf "Remove existing directory and continue? [y/N]: "; read -r confirm
+            printf "Remove existing directory and continue? [y/N]: "
+            read -r confirm
+            
             if [[ "$confirm" =~ ^[Yy]$ ]]; then
-                echo "Removing existing directory..."
+                log_info "Removing existing directory..."
                 if rm -rf "${WIKIS_DIR:?}/${WIKI_NAME:?}"; then
-                    echo "Existing directory removed"
+                    log_info "Existing directory removed"
                 else
-                    echo "Error: Failed to remove existing directory" >&2
-                    echo "Setup cancelled." >&2
+                    log_error "Failed to remove existing directory"
                     exit 1
                 fi
             else
-                echo "Using existing directory - continuing with current setup..."
+                log_info "Using existing directory - continuing with current setup..."
                 SKIP_DIRECTORY_SETUP=true
             fi
         fi
     done
     
-    # Skip input collection if using existing directory
+    # Collect configuration if not using existing directory
     if [[ "$SKIP_DIRECTORY_SETUP" != "true" ]]; then
-    # Get wiki domain
-    while [[ -z "$WIKI_DOMAIN" ]]; do
-        printf "Enter wiki domain (e.g., wiki.example.com): "; read -r WIKI_DOMAIN
-        if [[ ! "$WIKI_DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-            echo "Error: Please enter a valid domain name" >&2
-            WIKI_DOMAIN=""
-        fi
-    done
-    
-    # Get wiki language
-    echo "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh"
-    printf "Enter wiki language code [en]: "; read -r WIKI_LANG
-    WIKI_LANG="${WIKI_LANG:-en}"
-    
-    # Get SMTP configuration
-    echo
-    echo "SMTP Configuration:"
-    echo "Configure email settings for wiki notifications"
-    echo
-    
-    printf "Enter SMTP host: "; read -r SMTP_HOST
-    while [[ -z "$SMTP_HOST" ]] || ! validate_smtp_host "$SMTP_HOST"; do
-        if [[ -z "$SMTP_HOST" ]]; then
-            echo "Error: SMTP host cannot be empty"
-        else
-            echo "Error: Invalid SMTP host format. Please enter a valid hostname (e.g., smtp.gmail.com)"
-        fi
-        printf "Enter SMTP host: "; read -r SMTP_HOST
-    done
-    
-    printf "Enter SMTP port [587]: "; read -r SMTP_PORT
-    SMTP_PORT="${SMTP_PORT:-587}"
-    
-    printf "Enter SMTP username: "; read -r SMTP_USER
-    while [[ -z "$SMTP_USER" ]]; do
-        echo "Error: SMTP username cannot be empty"
-        printf "Enter SMTP username: "; read -r SMTP_USER
-    done
-    
-    printf "Enter SMTP password: "; read -r SMTP_PASS
-    echo
-    while [[ -z "$SMTP_PASS" ]] || ! validate_smtp_pass "$SMTP_PASS"; do
-        if [[ -z "$SMTP_PASS" ]]; then
-            echo "Error: SMTP password cannot be empty"
-        elif [[ "$SMTP_PASS" =~ [[:space:]] ]]; then
-            echo "Error: SMTP password cannot contain spaces. Please enter a password without spaces."
-        fi
-        printf "Enter SMTP password: "; read -r SMTP_PASS
+        # Get wiki domain
+        while [[ -z "$WIKI_DOMAIN" ]]; do
+            printf "Enter wiki domain (e.g., wiki.example.com): "
+            read -r WIKI_DOMAIN
+            validate_domain "$WIKI_DOMAIN" || WIKI_DOMAIN=""
+        done
+        
+        # Get wiki language
+        echo "Available languages: en, de, fr, es, it, pt, nl, pl, ru, ja, zh"
+        printf "Enter wiki language code [en]: "
+        read -r WIKI_LANG
+        WIKI_LANG="${WIKI_LANG:-en}"
+        validate_language_code "$WIKI_LANG" || WIKI_LANG="en"
+        
+        # Get SMTP configuration
         echo
-    done
-    
+        echo "📧 SMTP Configuration:"
+        echo "Configure email settings for wiki notifications"
+        echo
+        
+        # SMTP Host
+        while [[ -z "$SMTP_HOST" ]]; do
+            printf "Enter SMTP host: "
+            read -r SMTP_HOST
+            validate_smtp_host "$SMTP_HOST" || SMTP_HOST=""
+        done
+        
+        # SMTP Port
+        printf "Enter SMTP port [587]: "
+        read -r SMTP_PORT
+        SMTP_PORT="${SMTP_PORT:-587}"
+        validate_port "$SMTP_PORT" "SMTP port" || SMTP_PORT="587"
+        
+        # SMTP Username (email)
+        while [[ -z "$SMTP_USER" ]]; do
+            printf "Enter SMTP username (email address): "
+            read -r SMTP_USER
+            validate_email "$SMTP_USER" || SMTP_USER=""
+        done
+        
+        # SMTP Password
+        while [[ -z "$SMTP_PASS" ]]; do
+            printf "Enter SMTP password: "
+            read -r SMTP_PASS
+            validate_smtp_pass "$SMTP_PASS" || SMTP_PASS=""
+        done
+        
     else
-        echo "Loading existing configuration..."
+        log_info "Loading existing configuration..."
         # Load existing configuration from .env file
         local env_file="${WIKIS_DIR}/${WIKI_NAME}/.env"
         if [[ -f "$env_file" ]]; then
-            WIKI_DOMAIN=$(grep "^WIKI_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-            WIKI_LANG=$(grep "^WIKI_LANG=" "$env_file" | cut -d= -f2 2>/dev/null || echo "en")
-            SMTP_HOST=$(grep "^SMTP_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-            SMTP_PORT=$(grep "^SMTP_PORT=" "$env_file" | cut -d= -f2 2>/dev/null || echo "587")
-            SMTP_USER=$(grep "^SMTP_USER=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-            # Detect SSL configuration
-            local letsencrypt_host
-            letsencrypt_host=$(grep "^LETSENCRYPT_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-            if [[ -n "$letsencrypt_host" ]]; then
-                # SSL is configured in existing setup
-                SSL_ENABLED=true
-                echo "  SSL: Enabled (existing configuration)"
-            else
-                SSL_ENABLED=false
-                echo "  SSL: Not configured"
-            fi
-            echo "Loaded existing configuration:"
-            echo "  Domain: $WIKI_DOMAIN"
-            echo "  Language: $WIKI_LANG"
-            if [[ -n "$SMTP_HOST" ]]; then
-                echo "  SMTP Host: $SMTP_HOST"
-            fi
-            if [[ -n "$SMTP_USER" ]]; then
-                echo "  SMTP User: $SMTP_USER"
-            fi
+            # Source the environment file safely
+            source "$env_file" 2>/dev/null || true
+            WIKI_DOMAIN="${WIKI_HOST:-}"
+            WIKI_LANG="${WIKI_LANG:-en}"
+            SMTP_HOST="${SMTP_HOST:-}"
+            SMTP_PORT="${SMTP_PORT:-587}"
+            SMTP_USER="${SMTP_USER:-}"
+            
+            log_info "Loaded existing configuration from $env_file"
         else
-            echo "Warning: No .env file found in existing directory"
-            WIKI_DOMAIN=""
-            WIKI_LANG="en"
+            log_warn "No .env file found in existing directory"
+            log_warn "You will need to configure the wiki manually"
         fi
     fi
     
@@ -1111,108 +1082,116 @@ main() {
     
     local choice=""
     while [[ ! "$choice" =~ ^[1-4]$ ]]; do
-        printf "Choose option [1/2/3/4]: "; read -r choice
+        printf "Choose option [1/2/3/4]: "
+        read -r choice
+        if [[ ! "$choice" =~ ^[1-4]$ ]]; then
+            echo "❌ Please enter 1, 2, 3, or 4"
+        fi
     done
     
     case $choice in
-        1) SETUP_MODE="ssl" ;;
-        2) SETUP_MODE="http" ;;
-        3) 
+        1)
+            SETUP_MODE="ssl"
+            SSL_ENABLED=true
+            log_info "Selected: New wiki with SSL certificate"
+            ;;
+        2)
+            SETUP_MODE="new"
+            SSL_ENABLED=false
+            log_info "Selected: New wiki without SSL"
+            ;;
+        3)
             SETUP_MODE="restore"
-            echo
-            echo "Backup File Selection:"
-            printf "Enter path to backup file (.sql or .sql.gz): "; read -r BACKUP_FILE
-            while [[ -z "$BACKUP_FILE" ]] || [[ ! -f "$BACKUP_FILE" ]]; do
-                if [[ -z "$BACKUP_FILE" ]]; then
-                    echo "Error: Backup file path cannot be empty"
-                elif [[ ! -f "$BACKUP_FILE" ]]; then
-                    echo "Error: File not found: $BACKUP_FILE"
-                fi
-                printf "Enter path to backup file (.sql or .sql.gz): "; read -r BACKUP_FILE
+            SSL_ENABLED=false
+            printf "Enter path to backup file (.sql): "
+            read -r BACKUP_FILE
+            while [[ -z "$BACKUP_FILE" ]] || ! validate_file_exists "$BACKUP_FILE" "Backup file"; do
+                printf "Enter path to backup file (.sql): "
+                read -r BACKUP_FILE
             done
-            echo "Selected backup file: $BACKUP_FILE"            ;;
-        4) 
+            log_info "Selected backup file: $BACKUP_FILE"
+            ;;
+        4)
             SETUP_MODE="restore_with_images"
-            echo
-            echo "Backup File Selection:"
-            printf "Enter path to backup file (.sql or .sql.gz): "; read -r BACKUP_FILE
-            while [[ -z "$BACKUP_FILE" ]] || [[ ! -f "$BACKUP_FILE" ]]; do
-                if [[ -z "$BACKUP_FILE" ]]; then
-                    echo "Error: Backup file path cannot be empty"
-                elif [[ ! -f "$BACKUP_FILE" ]]; then
-                    echo "Error: File not found: $BACKUP_FILE"
-                fi
-                printf "Enter path to backup file (.sql or .sql.gz): "; read -r BACKUP_FILE
+            SSL_ENABLED=false
+            printf "Enter path to backup file (.sql): "
+            read -r BACKUP_FILE
+            while [[ -z "$BACKUP_FILE" ]] || ! validate_file_exists "$BACKUP_FILE" "Backup file"; do
+                printf "Enter path to backup file (.sql): "
+                read -r BACKUP_FILE
             done
-            echo "Selected backup file: $BACKUP_FILE"
-            echo
-            echo "Images Archive Selection:"
-            printf "Enter path to images archive (.zip): "; read -r IMAGES_FILE
-            while [[ -z "$IMAGES_FILE" ]] || [[ ! -f "$IMAGES_FILE" ]]; do
-                if [[ -z "$IMAGES_FILE" ]]; then
-                    echo "Error: Images file path cannot be empty"
-                elif [[ ! -f "$IMAGES_FILE" ]]; then
-                    echo "Error: File not found: $IMAGES_FILE"
-                fi
-                printf "Enter path to images archive (.zip): "; read -r IMAGES_FILE
+            printf "Enter path to images archive (.zip): "
+            read -r IMAGES_FILE
+            while [[ -z "$IMAGES_FILE" ]] || ! validate_file_exists "$IMAGES_FILE" "Images file"; do
+                printf "Enter path to images archive (.zip): "
+                read -r IMAGES_FILE
             done
-            echo "Selected images file: $IMAGES_FILE"
+            log_info "Selected backup file: $BACKUP_FILE"
+            log_info "Selected images file: $IMAGES_FILE"
             ;;
     esac
     
-    # Show configuration summary
-    echo
-    echo "Configuration Summary:"
-    echo "  Wiki Name: $WIKI_NAME"
-    echo "  Domain: $WIKI_DOMAIN"
-    echo "  Language: $WIKI_LANG"
-    echo "  Setup Mode: $SETUP_MODE"
-    echo
-    echo "  SMTP Host: $SMTP_HOST"
-    echo "  SMTP Port: $SMTP_PORT"
-    echo "  SMTP User: $SMTP_USER"
-    if [[ "$SETUP_MODE" == "restore" ]]; then
-        echo "  Backup File: $BACKUP_FILE"
-    elif [[ "$SETUP_MODE" == "restore_with_images" ]]; then
-        echo "  Backup File: $BACKUP_FILE"
-        echo "  Images File: $IMAGES_FILE"
+    # Apply default values and validate configuration
+    apply_defaults
+    
+    # Validate all configuration
+    if ! validate_configuration; then
+        log_error "Configuration validation failed"
+        exit 1
     fi
     
-    printf "Proceed with this configuration? [y/N]: "; read -r confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        echo "Setup cancelled."
+    # Show configuration summary and get confirmation
+    if ! confirm_configuration; then
+        log_info "Setup cancelled by user"
         exit 0
     fi
     
     echo
-    echo "Starting wiki initialization..."
+    log_info "Starting wiki initialization..."
     
-    # Setup process
+    # Setup process with improved error handling
     if [[ "$SKIP_DIRECTORY_SETUP" != "true" ]]; then
-        setup_wiki_directory
-        create_environment_file
-        create_email_config_files
+        if ! setup_wiki_directory; then
+            log_error "Failed to setup wiki directory"
+            exit 1
+        fi
+        
+        if ! create_environment_file; then
+            log_error "Failed to create environment file"
+            exit 1
+        fi
+        
+        if ! create_email_config_files; then
+            log_error "Failed to create email configuration files"
+            exit 1
+        fi
     else
-        echo "Using existing directory - skipping directory and environment setup"
+        log_info "Using existing directory - skipping directory and environment setup"
     fi
-    deploy_wiki
+    
+    # Deploy wiki with OAuth extensions
+    if ! deploy_wiki; then
+        log_error "Wiki deployment failed"
+        exit 1
+    fi
     
     # Handle backup restoration if selected
     if [[ "$SETUP_MODE" == "restore" ]]; then
         if ! restore_from_backup "$BACKUP_FILE"; then
-            echo "Error: Backup restoration failed" >&2
+            log_error "Backup restoration failed"
             exit 1
         fi
     elif [[ "$SETUP_MODE" == "restore_with_images" ]]; then
         if ! restore_from_backup "$BACKUP_FILE"; then
-            echo "Error: Backup restoration failed" >&2
+            log_error "Backup restoration failed"
             exit 1
         fi
         if ! import_images "$IMAGES_FILE"; then
-            echo "Error: Images import failed" >&2
+            log_error "Images import failed"
             exit 1
         fi
     fi
+    
     setup_ssl
     
     # Show completion information
