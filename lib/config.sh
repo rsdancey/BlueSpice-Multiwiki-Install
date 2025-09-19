@@ -235,5 +235,9 @@ EOF
 
     echo "✅ Configuration saved successfully"
     echo "  📊 Generated database passwords for security"
-    echo "  🔧 All required environment variables configured"
+    echo "  🔧 All required environment variables configured:"
+    echo "    • VIRTUAL_HOST=$WIKI_DOMAIN"
+    echo "    • VIRTUAL_PORT=9090"
+    echo "    • LETSENCRYPT_HOST=$WIKI_DOMAIN"
+    echo "    • BLUESPICE_WIKI_IMAGE=bluespice/wiki:5.1"
 }
