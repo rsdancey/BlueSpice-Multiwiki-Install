@@ -6,8 +6,7 @@
 set -euo pipefail
 
 # Source validation library
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/validation.sh"
+source "${SCRIPT_DIR}/lib/validation.sh"
 
 # Define required configuration variables
 declare -A REQUIRED_CONFIG=(
