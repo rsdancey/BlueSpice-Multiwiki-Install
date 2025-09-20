@@ -467,57 +467,7 @@ SOCKET_PATCH_EOF'
     docker exec "$container" chmod +x /app/bin/run-installation.d/020-install-database
     log_info "Installer patched for network connections"
     log_info "MediaWiki installer patched for network connection"
-
-
-    log_info "Database users configured during creation - no additional sync needed"
-
-    # Setup socket proxy for MediaWiki installer
-    
-    
-    # Create pre-init-settings.php
-    sudo sh -c "echo '<?php' > ${DATA_DIR}/${WIKI_NAME}/pre-init-settings.php"
-    
-    # Create post-init-settings.php with SMTP configuration
-    # Load environment variables from .env file
-        # shellcheck source=/dev/null
-    if [[ -f ".env" ]]; then
-        source .env
-    fi
-    
-    cat > /tmp/post-init-settings.php << 'INIT_EOF'
-<?php
-
-/*
-#enable the LUA system
-#wfLoadExtension( 'Scribunto' );
-#$wgScribuntoDefaultEngine = 'luastandalone';
-*/
-
-# Override the default with a bundle of filetypes:
-$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
-'psd', 'mp3', 'xls', 'xlsx', 'doc','docx', 'mp4', 'mov', 'ico' );
-
-$wgCookieExpiration = 86400;
-$wgExtendedLoginCookieExpiration = null;
-INIT_EOF
-    docker exec "${CONTAINER_PREFIX}-wiki-web" mkdir -p /data/bluespice/bluespice
-    # Inject SMTP configuration using environment variables
-    cat >> /tmp/post-init-settings.php << SMTP_EOF
-
-
-\$wgSMTP = [
-    'host'     => '${SMTP_HOST}',
-    'IDHost'   => '${WIKI_HOST}',
-    'port'     => ${SMTP_PORT},
-    'auth'     => true,
-    'username' => '${SMTP_USER}',
-    'password' => '${SMTP_PASS}'
-];
-SMTP_EOF
-
-
-    sudo cp /tmp/post-init-settings.php "${DATA_DIR}/${WIKI_NAME}/post-init-settings.php" && sudo rm -f /tmp/post-init-settings.php
-    
+    log_info "Database users configured during creation - no additional sync needed"    
     log_info "BlueSpice initialization files created"
 }
 

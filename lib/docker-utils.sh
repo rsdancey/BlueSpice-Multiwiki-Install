@@ -91,5 +91,3 @@ docker_copy_to_container() {
     
     docker cp "$source_path" "$container_name:$dest_path"
 }
-
-# Get container logs

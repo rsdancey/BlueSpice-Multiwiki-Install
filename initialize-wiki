@@ -25,7 +25,7 @@ if [[ "${DEBUG:-}" == "true" ]]; then
 fi
 
 # Source modular libraries with error checking
-for lib in validation config docker-utils oauth-config; do
+for lib in validation config docker-utils oauth-config init-settings-config; do
     lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -197,9 +197,19 @@ create_environment_file() {
 # Authentication Extension Installation Functions
 # =============================================================================
 
-# Function to download and install MediaWiki authentication extensions
+configure_oauth_settings() {
+    local wiki_name=$1
+    local wiki_domain=$2
+    local post_init_file=$3
+    
+    # Use the new interactive OAuth configuration from init-settings-config library
+    setup_interactive_oauth_config "$wiki_name" "$wiki_domain"
+}
 
-# Function to configure Google OAuth settings
+# =============================================================================
+# Configure Email Functions
+# =============================================================================
+
 check_and_prompt_email_config() {
     local env_file="$1"
     local smtp_host smtp_user smtp_pass
@@ -225,100 +235,20 @@ check_and_prompt_email_config() {
     fi
 }
 
-
-# Email configuration file creation
+# Email configuration file creation (now using init-settings-config library)
 create_email_config_files() {
     local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
-    local env_file="${wiki_dir}/.env"
-    local pre_init_file="${wiki_dir}/pre-init-settings.php"
-    local post_init_file="${wiki_dir}/post-init-settings.php"
     
-    echo "Creating email configuration files..."
+    log_info "Creating BlueSpice configuration files..."
     
-    # Check and prompt for missing email configuration
-    check_and_prompt_email_config "$env_file"
-    
-    # Read SMTP settings from .env file
-    local smtp_host smtp_port smtp_user smtp_pass smtp_idhost
-    if [[ -f "$env_file" ]]; then
-        smtp_host=$(grep "^SMTP_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-        smtp_port=$(grep "^SMTP_PORT=" "$env_file" | cut -d= -f2 2>/dev/null || echo "587")
-        smtp_user=$(grep "^SMTP_USER=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-        smtp_pass=$(grep "^SMTP_PASS=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-        smtp_idhost=$(grep "^WIKI_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-    else
-        echo "Warning: .env file not found for email configuration"
+    # Use the new MediaWiki configuration library
+    if ! create_init-settings-config-files "$wiki_dir" "$WIKI_NAME"; then
+        log_error "Failed to create BlueSpice configuration files"
         return 1
     fi
     
-    # Create pre-init-settings.php with email permissions
-    cat > "$pre_init_file" << 'PREINIT_EOF'
-<?php
-
-# Enable email permissions for users
-\$wgGroupPermissions['user']['sendemail'] = true;
-\$wgGroupPermissions['autoconfirmed']['sendemail'] = true;
-PREINIT_EOF
-    
-    echo "Created pre-init-settings.php with email permissions"
-    
-    # Create post-init-settings.php with email configuration (only if SMTP is configured)
-    if [[ -n "$smtp_host" && -n "$smtp_user" && -n "$smtp_pass" ]]; then
-        cat > "$post_init_file" << POSTINIT_EOF
-<?php
-
-# Override the default with a bundle of filetypes:
-\$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
-'psd', 'mp3', 'xls', 'xlsx', 'doc','docx', 'mp4', 'mov', 'ico' );
-
-\$wgCookieExpiration = 86400;
-\$wgExtendedLoginCookieExpiration = null;
-
-# Email configuration
-\$wgPasswordSender = '$smtp_user';
-\$wgEmergencyContact = '$smtp_user';
-\$wgNoReplyAddress = '$smtp_user';
-
-# SMTP configuration
-\$wgSMTP = [
-    'host'     => '$smtp_host',
-    'IDHost'   => '$smtp_idhost',
-    'port'     => $smtp_port,
-    'auth'     => true,
-    'username' => '$smtp_user',
-    'password' => '$smtp_pass'
-];
-POSTINIT_EOF
-        
-
-
-
-        # Append guarded auth extensions so maintenance/CLI can run in task container
-        echo "Created post-init-settings.php with SMTP configuration"
-
-        echo "  SMTP Host: $smtp_host"
-        echo "  SMTP User: $smtp_user"
-        echo "  Email sender: $smtp_user"
-    else
-        # Create minimal post-init file if no SMTP configured
-        cat > "$post_init_file" << 'POSTINIT_MINIMAL_EOF'
-<?php
-
-# Override the default with a bundle of filetypes:
-\$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
-'psd', 'mp3', 'xls', 'xlsx', 'doc','docx', 'mp4', 'mov', 'ico' );
-
-\$wgCookieExpiration = 86400;
-\$wgExtendedLoginCookieExpiration = null;
-
-# Post-initialization settings
-# Add custom configurations here
-POSTINIT_MINIMAL_EOF
-        
-
-        # Append guarded auth extensions so maintenance/CLI can run in task container
-        echo "Created minimal post-init-settings.php (no SMTP configured)"
-    fi
+    log_info "BlueSpice configuration files created successfully"
+    return 0
 }
 
 # Wiki directory setup
