@@ -62,3 +62,4 @@ backup_*
 
 shared/.shared.env
 .global.env
+REFACTORING_SUMMARY.md
