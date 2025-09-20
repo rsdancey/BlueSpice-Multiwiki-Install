@@ -633,13 +633,17 @@ main() {
     # Validate all configuration
     if ! validate_configuration; then
         log_error "Configuration validation failed"
-        exit 1
+        local exit_code=1
+        echo "Main function returning with exit code: $exit_code"
+        exit $exit_code
     fi
     
     # Show configuration summary and get confirmation
     if ! confirm_configuration; then
         log_info "Setup cancelled by user"
-        exit 0
+        local exit_code=0
+        echo "Main function returning with exit code: $exit_code"
+        exit $exit_code
     fi
     
     echo
@@ -649,17 +653,23 @@ main() {
     if [[ "$SKIP_DIRECTORY_SETUP" != "true" ]]; then
         if ! setup_wiki_directory; then
             log_error "Failed to setup wiki directory"
-            exit 1
+            local exit_code=1
+            echo "Main function returning with exit code: $exit_code"
+            exit $exit_code
         fi
         
         if ! create_environment_file; then
             log_error "Failed to create environment file"
-            exit 1
+            local exit_code=1
+            echo "Main function returning with exit code: $exit_code"
+            exit $exit_code
         fi
         
         if ! create_email_config_files; then
             log_error "Failed to create email configuration files"
-            exit 1
+            local exit_code=1
+            echo "Main function returning with exit code: $exit_code"
+            exit $exit_code
         fi
     else
         log_info "Using existing directory - skipping directory and environment setup"
@@ -668,23 +678,31 @@ main() {
     # Deploy wiki with OAuth extensions
     if ! deploy_wiki_instance; then
         log_error "Wiki deployment failed"
-        exit 1
+        local exit_code=1
+        echo "Main function returning with exit code: $exit_code"
+        exit $exit_code
     fi
     
     # Handle backup restoration if selected
     if [[ "$SETUP_MODE" == "restore" ]]; then
         if ! restore_from_backup "$BACKUP_FILE"; then
             log_error "Backup restoration failed"
-            exit 1
+            local exit_code=1
+            echo "Main function returning with exit code: $exit_code"
+            exit $exit_code
         fi
     elif [[ "$SETUP_MODE" == "restore_with_images" ]]; then
         if ! restore_from_backup "$BACKUP_FILE"; then
             log_error "Backup restoration failed"
-            exit 1
+            local exit_code=1
+            echo "Main function returning with exit code: $exit_code"
+            exit $exit_code
         fi
         if ! import_images "$IMAGES_FILE"; then
             log_error "Images import failed"
-            exit 1
+            local exit_code=1
+            echo "Main function returning with exit code: $exit_code"
+            exit $exit_code
         fi
     fi
     
@@ -694,7 +712,9 @@ main() {
     show_completion_info
     
     # Explicitly exit with success
-    exit 0
+    local exit_code=0
+    echo "Main function returning with exit code: $exit_code"
+    exit $exit_code
 }
 
 # Run main function if script is executed directly
