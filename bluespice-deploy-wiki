@@ -239,6 +239,14 @@ create_data_directories() {
     docker exec "$container" chown -R 1000:1000 /data/bluespice/search 2>/dev/null || true
     docker exec "$container" chown -R 1002:bluespice /data/bluespice/logs 2>/dev/null || true
     
+    # Ensure temp directory for UUID generator used by GlobalIdGenerator
+    docker exec --user root "$container" mkdir -p "/tmp/${WIKI_NAME}"
+    docker exec --user root "$container" chmod 1777 "/tmp/${WIKI_NAME}"
+
+    # Ensure SimpleSAMLphp cert directory for scripts expecting /data/simplesamlphp/certs
+    docker exec "$container" mkdir -p /data/simplesamlphp/certs
+    docker exec --user root "$container" chown -R 1002:bluespice /data/simplesamlphp 2>/dev/null || true
+
     log_info "Data directories created for $WIKI_NAME"
 }
 
@@ -632,6 +640,10 @@ deploy_wiki() {
             # Now restart the task container
             log_info "Starting task container..."
             docker start "${CONTAINER_PREFIX}-wiki-task"
+
+
+            # Ensure temp directory exists in task container as well
+            docker exec --user root "${CONTAINER_PREFIX}-wiki-task" sh -lc "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}" 2>/dev/null || true
             
             log_info "Wiki deployment completed successfully!"
             echo ""
@@ -645,6 +657,11 @@ deploy_wiki() {
         log_info "Starting existing wiki..."
         cd "/core/wikis/${WIKI_NAME}"
         docker compose -f docker-compose.main.yml -f docker-compose.helper-service.yml up -d
+        
+        # Ensure temp directory exists in web and task containers after start
+        docker exec --user root "${CONTAINER_PREFIX}-wiki-web" sh -lc "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}" 2>/dev/null || true
+        docker exec --user root "${CONTAINER_PREFIX}-wiki-task" sh -lc "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}" 2>/dev/null || true
+
         log_info "Wiki started successfully!"
     fi
 }
