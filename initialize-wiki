@@ -452,6 +452,8 @@ show_completion_info() {
     echo "  Stop:   docker compose -f /core/wikis/$WIKI_NAME/docker-compose.helper-service.yml -f /core/wikis/$WIKI_NAME/docker-compose.main.yml down"
     echo "  Update: ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --domain=$WIKI_DOMAIN --run-update"
     echo
+    
+    return 0
 }
 
 # Main execution with improved validation and error handling
@@ -690,6 +692,9 @@ main() {
     
     # Show completion information
     show_completion_info
+    
+    # Explicitly exit with success
+    exit 0
 }
 
 # Run main function if script is executed directly
