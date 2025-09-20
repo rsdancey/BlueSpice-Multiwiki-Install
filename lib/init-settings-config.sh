@@ -322,72 +322,61 @@ setup_interactive_oauth_config() {
     
     if [[ "${configure_oauth,,}" == "y" ]]; then
         # Get OAuth credentials
-        printf "Enter Google OAuth Client ID (or press Enter to skip): "
+        printf "Enter Google OAuth Client ID"
         read -r oauth_client_id
         
-        if [[ -n "$oauth_client_id" ]]; then
+        while [[ -z "$oauth_client_id" ]]; do
+                echo "Client ID is required"
+                printf "Enter Google OAuth Client ID: "
+                read -r oauth_client_id
+            done
+
+        printf "Enter Google OAuth Client Secret: "
+        read -r oauth_client_secret
+            
+        while [[ -z "$oauth_client_secret" ]]; do
+            echo "Client Secret is required when Client ID is provided"
             printf "Enter Google OAuth Client Secret: "
             read -r oauth_client_secret
+        done
             
-            while [[ -z "$oauth_client_secret" ]]; do
-                echo "Client Secret is required when Client ID is provided"
-                printf "Enter Google OAuth Client Secret: "
-                read -r oauth_client_secret
-            done
+        # Ask about account creation settings
+        printf "Allow automatic account creation for Google users? [y/N]: "
+        read -r allow_autocreate
             
-            # Ask about account creation settings
-            printf "Allow automatic account creation for Google users? [y/N]: "
-            read -r allow_autocreate
+        local create_if_not_exist="false"
+        local email_matching_only="true"
             
-            local create_if_not_exist="false"
-            local email_matching_only="true"
-            
-            if [[ "${allow_autocreate,,}" == "y" ]]; then
-                create_if_not_exist="true"
-                email_matching_only="false"
-            fi
-            
-            # Add Google OAuth configuration using the centralized function
-            local wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
-            local wiki_dir="${wikis_dir}/${wiki_name}"
-            local local_post_init_file="${wiki_dir}/post-init-settings.php"
-            
-            if ! add_google_oauth_config "$local_post_init_file" "$wiki_domain" "$oauth_client_id" "$oauth_client_secret" "$create_if_not_exist" "$email_matching_only"; then
-                echo "❌ Failed to add OAuth configuration" >&2
-                return 1
-            fi
-            
-            # Copy the updated configuration to the container
-            docker cp "$local_post_init_file" "$container_name:$container_post_init_file"
-            
-            echo ""
-            echo "OAuth configuration added successfully!"
-            
-            # Store OAuth settings in .env file for reference
-            local env_file="${WIKIS_DIR}/${wiki_name}/.env"
-            {
-                echo ""
-                echo "# Google OAuth Settings"
-                echo "OAUTH_CLIENT_ID=${oauth_client_id}"
-                echo "OAUTH_CLIENT_SECRET=${oauth_client_secret}"
-                echo "OAUTH_AUTOCREATE=${create_if_not_exist}"
-            } >> "$env_file"
-            
-        else
-            log_info "OAuth configuration skipped"
-            # Add placeholder configuration using the centralized function
-            local wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
-            local wiki_dir="${wikis_dir}/${wiki_name}"
-            local local_post_init_file="${wiki_dir}/post-init-settings.php"
-            
-            if ! add_oauth_placeholder_config "$local_post_init_file"; then
-                echo "❌ Failed to add OAuth placeholder configuration" >&2
-                return 1
-            fi
-            
-            # Copy the updated configuration to the container
-            docker cp "$local_post_init_file" "$container_name:$container_post_init_file"
+        if [[ "${allow_autocreate,,}" == "y" ]]; then
+            create_if_not_exist="true"
+            email_matching_only="false"
         fi
+            
+        # Add Google OAuth configuration using the centralized function
+        local wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
+        local wiki_dir="${wikis_dir}/${wiki_name}"
+        local local_post_init_file="${wiki_dir}/post-init-settings.php"
+        
+        if ! add_google_oauth_config "$local_post_init_file" "$wiki_domain" "$oauth_client_id" "$oauth_client_secret" "$create_if_not_exist" "$email_matching_only"; then
+            echo "❌ Failed to add OAuth configuration" >&2
+            return 1
+        fi
+            
+        # Copy the updated configuration to the container
+        docker cp "$local_post_init_file" "$container_name:$container_post_init_file"
+            
+        echo ""
+        echo "OAuth configuration added successfully!"
+            
+        # Store OAuth settings in .env file for reference
+        local env_file="${WIKIS_DIR}/${wiki_name}/.env"
+        {
+            echo ""
+            echo "# Google OAuth Settings"
+            echo "OAUTH_CLIENT_ID=${oauth_client_id}"
+            echo "OAUTH_CLIENT_SECRET=${oauth_client_secret}"
+            echo "OAUTH_AUTOCREATE=${create_if_not_exist}"
+        } >> "$env_file"
     else
         log_info "OAuth configuration skipped"
         # Add placeholder configuration using the centralized function
