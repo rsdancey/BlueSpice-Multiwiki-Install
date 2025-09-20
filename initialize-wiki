@@ -24,17 +24,7 @@ if [[ "${DEBUG:-}" == "true" ]]; then
     echo "DEBUG: TEMPLATE_DIR = $TEMPLATE_DIR"
 fi
 
-# Source modular libraries with error checking
-for lib in validation config docker-utils oauth-config init-settings-config; do
-    lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
-    if [[ ! -f "$lib_path" ]]; then
-        echo "Error: Required library not found: $lib_path" >&2
-        exit 1
-    fi
-    source "$lib_path"
-done
-
-# Default values
+# Default values - must be set before sourcing libraries
 WIKI_NAME=""
 WIKI_DOMAIN=""
 WIKI_LANG="en"
@@ -45,6 +35,16 @@ SMTP_HOST=""
 SMTP_PORT="587"
 SMTP_USER=""
 SMTP_PASS=""
+
+# Source modular libraries with error checking
+for lib in validation config docker-utils oauth-config init-settings-config; do
+    lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
+    if [[ ! -f "$lib_path" ]]; then
+        echo "Error: Required library not found: $lib_path" >&2
+        exit 1
+    fi
+    source "$lib_path"
+done
 
 # Colors for output
 RED='\033[0;31m'
