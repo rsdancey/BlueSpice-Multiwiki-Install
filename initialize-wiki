@@ -197,14 +197,6 @@ create_environment_file() {
 # Authentication Extension Installation Functions
 # =============================================================================
 
-configure_oauth_settings() {
-    local wiki_name=$1
-    local wiki_domain=$2
-    local post_init_file=$3
-    
-    # Use the new interactive OAuth configuration from init-settings-config library
-    setup_interactive_oauth_config "$wiki_name" "$wiki_domain"
-}
 
 # =============================================================================
 # Configure Email Functions

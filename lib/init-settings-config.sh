@@ -71,11 +71,11 @@ create_post_init_settings() {
 ];   
 
 # add a function to autoadd new users to basic groups                                                                                 
-\$wgHooks['LocalUserCreated'][] = function ( User $user, $autocreated ) {                                                              
-    $services = MediaWiki\MediaWikiServices::getInstance();                                                                           
-    $userGroupManager = $services->getUserGroupManager();                                                                             
-    $userGroupManager->addUserToGroup( $user, 'editor' );                                                                             
-    $userGroupManager->addUserToGroup( $user, 'reviewer' );                                                                           
+    \$wgHooks['LocalUserCreated'][] = function ( User \$user, \$autocreated ) {
+    \$services = MediaWiki\\MediaWikiServices::getInstance();
+    \$userGroupManager = \$services->getUserGroupManager();
+    \$userGroupManager->addUserToGroup( \$user, 'editor' );
+    \$userGroupManager->addUserToGroup( \$user, 'reviewer' );
 };       
 
 # Post-initialization settings
