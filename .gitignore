@@ -37,6 +37,8 @@ scripts_backup/
 backup_*/
 
 # Additional backup patterns
+*.backup.*
+*.backup[0-9]*
 *.backup-*
 *backup-*
 backup_*
