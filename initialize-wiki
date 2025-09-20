@@ -7,6 +7,8 @@ set -euo pipefail
 
 # Script directory and paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Source logging functions
+source "${SCRIPT_DIR}/lib/logging.sh"
 # Ensure SCRIPT_DIR is correctly resolved
 if [[ ! -d "$SCRIPT_DIR" ]]; then
     echo "Error: Could not determine script directory" >&2
@@ -52,17 +54,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Logging functions
-log_info() {
-    echo -e "${GREEN}✓${NC} $1"
-}
 
-log_warn() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
 
-log_error() {
-    echo -e "${RED}✗${NC} $1" >&2
-}
 # Help function
 show_help() {
     cat << 'HELP'
@@ -179,31 +172,6 @@ parse_arguments() {
     done
 }
 # Certificate expiry checking (keeping existing function)
-check_certificate_expiry() {
-    local domain="$1"
-    
-    if docker exec bluespice-letsencrypt-service test -f "/etc/nginx/certs/${domain}.crt" 2>/dev/null; then
-        local expiry expiry_epoch current_epoch days_until_expiry
-        expiry=$(docker exec bluespice-letsencrypt-service openssl x509 -in "/etc/nginx/certs/${domain}.crt" -noout -enddate | cut -d= -f2)
-        expiry_epoch=$(date -d "$expiry" +%s)
-        current_epoch=$(date +%s)
-        days_until_expiry=$(( (expiry_epoch - current_epoch) / 86400 ))
-        
-        if [[ $days_until_expiry -lt 30 ]]; then
-            log_warn "SSL certificate expires in $days_until_expiry days"
-            return 1
-        else
-            log_info "SSL certificate valid for $days_until_expiry days"
-            return 0
-        fi
-    else
-        log_warn "No SSL certificate found for $domain"
-        return 1
-    fi
-}
-
-
-# Environment file creation (updated to use config library)
 create_environment_file() {
     local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
     
@@ -230,384 +198,8 @@ create_environment_file() {
 # =============================================================================
 
 # Function to download and install MediaWiki authentication extensions
-install_auth_extensions() {
-    local wiki_name=$1
-    local container_name="bluespice-${wiki_name}-wiki-web"
-    local temp_dir="/tmp/mw_extensions_$$"
-    
-    echo "Installing authentication extensions for $wiki_name..."
-    
-    # Create temporary directory for downloads
-    mkdir -p "$temp_dir"
-    
-    # Download PluggableAuth extension
-    echo "  Downloading PluggableAuth extension..."
-    if ! curl -L --fail --retry 3 -o "$temp_dir/PluggableAuth.tar.gz" \
-        "https://extdist.wmflabs.org/dist/extensions/PluggableAuth-REL1_43-8d3e70f.tar.gz"; then
-        echo "  Warning: Failed to download PluggableAuth from extension distributor, trying GitHub..."
-        if ! curl -L --fail --retry 3 -o "$temp_dir/PluggableAuth.tar.gz" \
-            "https://github.com/wikimedia/mediawiki-extensions-PluggableAuth/archive/refs/heads/REL1_43.tar.gz"; then
-            echo "  ERROR: Failed to download PluggableAuth extension"
-            rm -rf "$temp_dir"
-            return 1
-        fi
-    fi
-    
-    # Download OpenIDConnect extension
-    echo "  Downloading OpenIDConnect extension..."
-    if ! curl -L --fail --retry 3 -o "$temp_dir/OpenIDConnect.tar.gz" \
-        "https://extdist.wmflabs.org/dist/extensions/OpenIDConnect-REL1_43-52e0b73.tar.gz"; then
-        echo "  Warning: Failed to download OpenIDConnect from extension distributor, trying GitHub..."
-        if ! curl -L --fail --retry 3 -o "$temp_dir/OpenIDConnect.tar.gz" \
-            "https://github.com/wikimedia/mediawiki-extensions-OpenIDConnect/archive/refs/heads/REL1_43.tar.gz"; then
-            echo "  ERROR: Failed to download OpenIDConnect extension"
-            rm -rf "$temp_dir"
-            return 1
-        fi
-    fi
-    
-    # Extract extensions
-    echo "  Extracting extensions..."
-    cd "$temp_dir"
-    tar -xzf PluggableAuth.tar.gz
-    tar -xzf OpenIDConnect.tar.gz
-    
-    # Find and rename extracted directories to proper names
-    if [ -d "PluggableAuth" ]; then
-        echo "  PluggableAuth directory already has correct name"
-    elif [ -d "mediawiki-extensions-PluggableAuth-REL1_43" ]; then
-        mv "mediawiki-extensions-PluggableAuth-REL1_43" "PluggableAuth"
-    else
-        # Find and rename the extracted directory
-        local pluggable_dir
-        pluggable_dir=$(find . -maxdepth 1 -type d -name "*PluggableAuth*" | head -1)
-        if [ -n "$pluggable_dir" ]; then
-            mv "$pluggable_dir" "PluggableAuth"
-        fi
-    fi
-    
-    if [ -d "OpenIDConnect" ]; then
-        echo "  OpenIDConnect directory already has correct name"
-    elif [ -d "mediawiki-extensions-OpenIDConnect-REL1_43" ]; then
-        mv "mediawiki-extensions-OpenIDConnect-REL1_43" "OpenIDConnect"
-    else
-        # Find and rename the extracted directory
-        local openid_dir
-        openid_dir=$(find . -maxdepth 1 -type d -name "*OpenIDConnect*" | head -1)
-        if [ -n "$openid_dir" ]; then
-            mv "$openid_dir" "OpenIDConnect"
-        fi
-    fi
-    
-    # Verify directories exist
-    if [ ! -d "PluggableAuth" ] || [ ! -d "OpenIDConnect" ]; then
-        echo "  ERROR: Failed to extract extensions properly"
-        ls -la
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    # Set proper ownership BEFORE copying to container
-    # This ensures files are owned by the same UID/GID that the container uses
-    echo "  Preparing extensions for container..."
-    # The bluespice user in container has UID/GID 1002
-    # We'll set permissions that will work regardless of ownership
-    chmod -R 755 PluggableAuth
-    chmod -R 755 OpenIDConnect
-    
-    # Copy extensions to container
-    echo "  Copying extensions to container..."
-    docker cp "PluggableAuth" "$container_name:/app/bluespice/w/extensions/"
-    docker cp "OpenIDConnect" "$container_name:/app/bluespice/w/extensions/"
-    
-    # Instead of trying to chown (which fails), just ensure permissions are correct
-    # The files will be readable/executable by all users including bluespice
-    echo "  Setting permissions..."
-    docker exec "$container_name" chmod -R 755 /app/bluespice/w/extensions/PluggableAuth 2>/dev/null || true
-    docker exec "$container_name" chmod -R 755 /app/bluespice/w/extensions/OpenIDConnect 2>/dev/null || true
-    
-    # Verify installation
-    echo "  Verifying installation..."
-    if docker exec "$container_name" test -f /app/bluespice/w/extensions/PluggableAuth/extension.json && \
-       docker exec "$container_name" test -f /app/bluespice/w/extensions/OpenIDConnect/extension.json; then
-        echo "  ✓ Authentication extensions installed successfully"
-        
-        # Add extension configuration to post-init-settings.php AFTER successful installation
-        echo "  Adding extension configuration to post-init-settings.php..."
-        local post_init_file="/data/bluespice/post-init-settings.php"
-        
-        # Check if configuration already exists
-        if docker exec "$container_name" grep -q "wfLoadExtension.*PluggableAuth" "$post_init_file" 2>/dev/null; then
-            echo "  Extension configuration already exists in post-init-settings.php"
-        else
-            # Add the extension configuration
-            docker exec "$container_name" bash -c "cat >> '$post_init_file' << 'AUTH_CONFIG_EOF'
-
-# Load web-only auth integrations (skip for CLI/maintenance)
-if ( !isset(\\\$wgCommandLineMode) || !\\\$wgCommandLineMode ) {
-    wfLoadExtension( 'PluggableAuth' );
-    wfLoadExtension( 'OpenIDConnect' );
-}
-AUTH_CONFIG_EOF"
-            echo "  ✓ Extension configuration added to post-init-settings.php"
-        fi
-        
-        # Configure OAuth settings after successful extension installation
-        local wiki_domain=$(grep "^WIKI_HOST=" /core/wikis/${wiki_name}/.env 2>/dev/null | cut -d'=' -f2 | tr -d '"')
-        
-        if [ -n "$wiki_domain" ]; then
-            echo ""
-            echo "Extensions installed successfully. Now configuring OAuth..."
-            # Call configure_oauth_settings with correct parameters
-            configure_oauth_settings "$wiki_name" "$wiki_domain" "$post_init_file"
-        else
-            echo "Warning: Could not determine wiki domain for OAuth configuration"
-        fi
-        
-        # Clean up temporary files
-        cd /
-        rm -rf "$temp_dir"
-        return 0
-    else
-        echo "  ERROR: Extension installation verification failed"
-        cd /
-        rm -rf "$temp_dir"
-        return 1
-    fi
-}
-
-# Function to check if authentication extensions need to be installed
-check_auth_extensions_needed() {
-    local wiki_name=$1
-    local container_name="bluespice-${wiki_name}-wiki-web"
-    
-    # Check if container is running
-    if ! docker ps | grep -q "$container_name"; then
-        echo "  Container $container_name is not running"
-        return 2
-    fi
-    
-    # Check if extensions already exist
-    if docker exec "$container_name" test -d /app/bluespice/w/extensions/PluggableAuth 2>/dev/null && \
-       docker exec "$container_name" test -d /app/bluespice/w/extensions/OpenIDConnect 2>/dev/null; then
-        echo "  Authentication extensions already installed"
-        return 1
-    fi
-    
-    # Extensions need to be installed
-    return 0
-}
-
-# OAuth Configuration Function
-# =============================================================================
 
 # Function to configure Google OAuth settings
-configure_oauth_settings() {
-    local wiki_name=$1
-    local wiki_domain=$2
-    local post_init_file=$3
-    
-    echo ""
-    echo "==================================================================="
-    echo "Google OAuth Configuration (Optional)"
-    echo "==================================================================="
-    echo ""
-    echo "To enable 'Login with Google' functionality, you need to:"
-    echo "1. Create a Google Cloud project at https://console.cloud.google.com"
-    echo "2. Enable Google+ API"
-    echo "3. Create OAuth 2.0 credentials"
-    echo "4. Add this as authorized redirect URI:"
-    echo "   https://${wiki_domain}/index.php/Special:PluggableAuthLogin"
-    echo ""
-    
-    printf "Do you want to configure Google OAuth now? [y/N]: "
-    read -r configure_oauth
-    
-    if [[ "${configure_oauth,,}" == "y" ]]; then
-        # Get OAuth credentials
-        printf "Enter Google OAuth Client ID (or press Enter to skip): "
-        read -r oauth_client_id
-        
-        if [[ -n "$oauth_client_id" ]]; then
-            printf "Enter Google OAuth Client Secret: "
-            read -r oauth_client_secret
-            
-            while [[ -z "$oauth_client_secret" ]]; do
-                echo "Client Secret is required when Client ID is provided"
-                printf "Enter Google OAuth Client Secret: "
-                read -r oauth_client_secret
-            done
-            
-            # Ask about account creation settings
-            printf "Allow automatic account creation for Google users? [y/N]: "
-            read -r allow_autocreate
-            
-            local create_if_not_exist="false"
-            local email_matching_only="true"
-            
-            if [[ "${allow_autocreate,,}" == "y" ]]; then
-                create_if_not_exist="true"
-                email_matching_only="false"
-            fi
-            
-            # Write OAuth configuration to post-init-settings.php
-            cat >> "$post_init_file" <<OAUTH_CONFIG_EOF
-
-# ============================================
-# Google OAuth Configuration
-# ============================================
-
-# Whitelist some pages for public access
-\$wgWhitelistRead = [
-    'Privacy Policy',
-    'Special:Login',
-    'Special:CreateAccount',
-    'Special:CreateAccount/return'
-];
-
-# Google OAuth configuration
-\$wgPluggableAuth_Config["Google"] = [
-    "plugin" => "OpenIDConnect",
-    "data" => [
-        "providerURL" => "https://accounts.google.com/.well-known/openid-configuration",
-        "clientID" => "${oauth_client_id}",
-        "clientSecret" => "${oauth_client_secret}",
-        "scope" => ["openid", "email", "profile"],
-        "email_key" => "email",
-        "use_email_mapping" => true
-    ],
-    "buttonLabelMessage" => "Login with Google"
-];
-
-# Enable local login alongside PluggableAuth
-\$wgPluggableAuth_EnableLocalLogin = true;
-\$wgPluggableAuth_EnableAutoLogin = false;
-
-# OAuth email matching and account creation settings
-\$wgPluggableAuth_EmailMatchingOnly = ${email_matching_only};
-\$wgPluggableAuth_CreateIfDoesNotExist = ${create_if_not_exist};
-
-# Explicitly prevent automatic user creation if not enabled
-\$wgGroupPermissions["*"]["autocreateaccount"] = ${create_if_not_exist};
-
-# Additional OpenIDConnect settings
-\$wgOpenIDConnect_UseEmailNameAsUserName = false;
-\$wgOpenIDConnect_MigrateUsersByEmail = true;
-\$wgOpenIDConnect_UseRealNameAsUserName = false;
-OAUTH_CONFIG_EOF
-            
-            echo ""
-            echo "OAuth configuration added successfully!"
-            echo "  Client ID: ${oauth_client_id:0:20}..."
-            echo "  Auto-create accounts: ${create_if_not_exist}"
-            echo ""
-            echo "IMPORTANT: Make sure to add this redirect URI in Google Cloud Console:"
-            echo "  https://${wiki_domain}/index.php/Special:PluggableAuthLogin"
-            
-            # Store OAuth settings in .env file for reference
-            local env_file="${WIKIS_DIR}/${wiki_name}/.env"
-            {
-                echo ""
-                echo "# Google OAuth Settings"
-                echo "OAUTH_CLIENT_ID=${oauth_client_id}"
-                echo "OAUTH_CLIENT_SECRET=${oauth_client_secret}"
-                echo "OAUTH_AUTOCREATE=${create_if_not_exist}"
-            } >> "$env_file"
-            
-        else
-            echo "OAuth configuration skipped. You can add it later by editing:"
-            echo "  /data/bluespice/post-init-settings.php"
-            
-            # Add placeholder configuration
-            cat >> "$post_init_file" <<'OAUTH_PLACEHOLDER_EOF'
-
-# ============================================
-# Google OAuth Configuration (Not Configured)
-# ============================================
-# To enable Google OAuth login:
-# 1. Get credentials from https://console.cloud.google.com
-# 2. Uncomment and update the configuration below
-# 3. Add redirect URI: https://YOUR-DOMAIN/index.php/Special:PluggableAuthLogin
-
-/*
-$wgWhitelistRead = [
-    'Privacy Policy',
-    'Special:Login', 
-    'Special:CreateAccount',
-    'Special:CreateAccount/return'
-];
-
-$wgPluggableAuth_Config["Google"] = [
-    "plugin" => "OpenIDConnect",
-    "data" => [
-        "providerURL" => "https://accounts.google.com/.well-known/openid-configuration",
-        "clientID" => "YOUR_GOOGLE_CLIENT_ID",
-        "clientSecret" => "YOUR_GOOGLE_CLIENT_SECRET",
-        "scope" => ["openid", "email", "profile"],
-        "email_key" => "email",
-        "use_email_mapping" => true
-    ],
-    "buttonLabelMessage" => "Login with Google"
-];
-
-$wgPluggableAuth_EnableLocalLogin = true;
-$wgPluggableAuth_EnableAutoLogin = false;
-$wgPluggableAuth_EmailMatchingOnly = true;
-$wgPluggableAuth_CreateIfDoesNotExist = false;
-$wgGroupPermissions["*"]["autocreateaccount"] = false;
-$wgOpenIDConnect_UseEmailNameAsUserName = false;
-$wgOpenIDConnect_MigrateUsersByEmail = true;
-$wgOpenIDConnect_UseRealNameAsUserName = false;
-*/
-OAUTH_PLACEHOLDER_EOF
-        fi
-    else
-        echo "OAuth configuration skipped."
-        
-        # Add placeholder configuration
-        cat >> "$post_init_file" <<'OAUTH_PLACEHOLDER_EOF'
-
-# ============================================
-# Google OAuth Configuration (Not Configured)
-# ============================================
-# To enable Google OAuth login:
-# 1. Get credentials from https://console.cloud.google.com
-# 2. Uncomment and update the configuration below
-# 3. Add redirect URI: https://YOUR-DOMAIN/index.php/Special:PluggableAuthLogin
-
-/*
-$wgWhitelistRead = [
-    'Privacy Policy',
-    'Special:Login',
-    'Special:CreateAccount',
-    'Special:CreateAccount/return'
-];
-
-$wgPluggableAuth_Config["Google"] = [
-    "plugin" => "OpenIDConnect",
-    "data" => [
-        "providerURL" => "https://accounts.google.com/.well-known/openid-configuration",
-        "clientID" => "YOUR_GOOGLE_CLIENT_ID",
-        "clientSecret" => "YOUR_GOOGLE_CLIENT_SECRET",
-        "scope" => ["openid", "email", "profile"],
-        "email_key" => "email",
-        "use_email_mapping" => true
-    ],
-    "buttonLabelMessage" => "Login with Google"
-];
-
-$wgPluggableAuth_EnableLocalLogin = true;
-$wgPluggableAuth_EnableAutoLogin = false;
-$wgPluggableAuth_EmailMatchingOnly = true;
-$wgPluggableAuth_CreateIfDoesNotExist = false;
-$wgGroupPermissions["*"]["autocreateaccount"] = false;
-$wgOpenIDConnect_UseEmailNameAsUserName = false;
-$wgOpenIDConnect_MigrateUsersByEmail = true;
-$wgOpenIDConnect_UseRealNameAsUserName = false;
-*/
-OAUTH_PLACEHOLDER_EOF
-    fi
-}
 check_and_prompt_email_config() {
     local env_file="$1"
     local smtp_host smtp_user smtp_pass
@@ -749,7 +341,7 @@ setup_wiki_directory() {
 }
 
 # Wiki deployment with improved OAuth extension handling
-deploy_wiki() {
+deploy_wiki_instance() {
     local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
     
     log_info "Deploying wiki instance..."
@@ -792,6 +384,7 @@ setup_ssl() {
         echo "SSL certificate will be automatically generated by Let's Encrypt"
         echo "This may take a few minutes..."
     fi
+    return 0
 }
 
 # Backup restoration function using proper MediaWiki maintenance approach
@@ -910,37 +503,6 @@ restore_from_backup() {
 
 
 # Images import function using images import script
-import_images() {
-    local images_file="$1"
-    local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
-    
-    echo "Starting images import..."
-    
-    if [[ ! -f "$images_file" ]]; then
-        echo "Error: Images file not found: $images_file" >&2
-        return 1
-    fi
-    
-    local script_dir="/core/core_install"
-    local images_importer="$script_dir/import-images.sh"
-    
-    if [[ ! -f "$images_importer" ]]; then
-        echo "Error: Images import script not found at: $images_importer" >&2
-        return 1
-    fi
-    
-    echo "Using images import script to import images..."
-    
-    if "$images_importer" --wiki-name="$WIKI_NAME" --images-archive="$images_file"; then
-        echo "✓ Images imported successfully"
-        return 0
-    else
-        echo "Error: Images import failed" >&2
-        return 1
-    fi
-}
-
-# Display completion information
 show_completion_info() {
     echo
     echo "================================================"
@@ -1186,7 +748,7 @@ main() {
     fi
     
     # Deploy wiki with OAuth extensions
-    if ! deploy_wiki; then
+    if ! deploy_wiki_instance; then
         log_error "Wiki deployment failed"
         exit 1
     fi

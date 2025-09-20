@@ -135,24 +135,6 @@ validate_file_exists() {
 }
 
 # Validate directory path
-validate_directory() {
-    local dir_path="$1"
-    local description="${2:-Directory}"
-    
-    if [[ -z "$dir_path" ]]; then
-        echo "❌ $description path cannot be empty" >&2
-        return 1
-    fi
-    
-    if [[ ! -d "$dir_path" ]]; then
-        echo "❌ $description not found: $dir_path" >&2
-        return 1
-    fi
-    
-    return 0
-}
-
-# Validate port number
 validate_port() {
     local port="$1"
     local description="${2:-Port}"

@@ -152,12 +152,23 @@ backup_mediawiki_specifics() {
     local specifics_dir="${BACKUP_DIR}/mediawiki_specifics"
     mkdir -p "$specifics_dir"
     
-    # Backup LocalSettings.php (critical configuration file)
-    if [[ -f "${MEDIAWIKI_PATH}/LocalSettings.php" ]]; then
+    # For BlueSpice installations, backup the configuration files from /data/bluespice
+    if [[ -f "/data/bluespice/post-init-settings.php" ]] || [[ -f "/data/bluespice/pre-init-settings.php" ]]; then
+        info "Detected BlueSpice installation, backing up BlueSpice configuration files"
+        if [[ -f "/data/bluespice/post-init-settings.php" ]]; then
+            cp "/data/bluespice/post-init-settings.php" "$specifics_dir/"
+            success "post-init-settings.php backed up"
+        fi
+        if [[ -f "/data/bluespice/pre-init-settings.php" ]]; then
+            cp "/data/bluespice/pre-init-settings.php" "$specifics_dir/"
+            success "pre-init-settings.php backed up"
+        fi
+    # For standard MediaWiki installations, backup LocalSettings.php
+    elif [[ -f "${MEDIAWIKI_PATH}/LocalSettings.php" ]]; then
         cp "${MEDIAWIKI_PATH}/LocalSettings.php" "$specifics_dir/"
         success "LocalSettings.php backed up"
     else
-        warning "LocalSettings.php not found at expected location"
+        warning "No configuration files found (neither BlueSpice nor standard MediaWiki)"
     fi
     
     # Backup .htaccess if present

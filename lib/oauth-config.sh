@@ -134,7 +134,7 @@ install_auth_extensions() {
     # Cleanup function
     cleanup_temp() {
         cd /
-        rm -rf "$temp_dir"
+        [[ -n "${temp_dir:-}" ]] && rm -rf "$temp_dir"
     }
     trap cleanup_temp EXIT
     

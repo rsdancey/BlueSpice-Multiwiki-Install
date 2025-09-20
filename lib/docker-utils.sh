@@ -31,7 +31,7 @@ wait_for_container_ready() {
             
             if [[ "$health_status" == "healthy" ]] || [[ "$health_status" == "none" ]]; then
                 # Additional check: ensure container can execute commands
-                if docker exec "$container_name" test -f /app/bluespice/w/LocalSettings.php 2>/dev/null; then
+                if docker exec "$container_name" test -f /data/bluespice/post-init-settings.php 2>/dev/null; then
                     echo "✓ Container $container_name is ready and operational"
                     return 0
                 fi
@@ -93,11 +93,3 @@ docker_copy_to_container() {
 }
 
 # Get container logs
-get_container_logs() {
-    local wiki_name="$1"
-    local lines="${2:-50}"
-    local container_name
-    container_name=$(get_container_name "$wiki_name")
-    
-    docker logs --tail "$lines" "$container_name" 2>&1
-}

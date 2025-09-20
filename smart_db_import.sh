@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Source logging functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/logging.sh"
+
 # Smart Database Import Script for MediaWiki/BlueSpice
 # Handles SQL dumps with automatic prefix detection and removal
 # Supports compressed and uncompressed SQL files
@@ -22,26 +26,10 @@ DB_PASS=""
 CONTAINER_NAME=""
 
 # Print functions
-print_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
 
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
 
-print_header() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-    echo -e "${BLUE}[INFO]${NC} ================================="
-}
 
 # Load configuration from .env file
 load_config() {

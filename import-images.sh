@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Source logging functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/logging.sh"
+
 # Images Import Script for BlueSpice Wiki (Version 2)
 # Fixes ownership issues by handling permissions on host side
 
@@ -11,21 +15,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Function to print colored messages
-print_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
 
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
 
 # Function to display usage
 usage() {
