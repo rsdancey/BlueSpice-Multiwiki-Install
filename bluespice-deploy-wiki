@@ -388,7 +388,12 @@ create_bluespice_files() {
 # Set required environment variables for MediaWiki installer
 export WIKI_NAME="$WIKI_NAME"
 export adminUserName="WikiSysop"
-export adminPass="$(cat /data/bluespice/initialAdminPassword)"
+# Use environment variable if available, otherwise fall back to file
+if [ -n "$WIKI_INITIAL_ADMIN_PASS" ]; then
+    export adminPass="$WIKI_INITIAL_ADMIN_PASS"
+else
+    export adminPass="$(cat /data/bluespice/initialAdminPassword)"
+fi
 
 installdbuser=${DB_USER}
 installdbpass=${DB_PASS}
@@ -406,7 +411,9 @@ echo "installdbuser: $installdbuser"
 echo "installdbpass: ${installdbpass:0:1}********${installdbpass: -1}"
 echo "lang: $lang"
 echo "admin user: $adminUserName"
-echo "pass: ${adminPass:0:1}********${adminPass: -1}"
+echo "admin password source: \${WIKI_INITIAL_ADMIN_PASS:0:1}********\${WIKI_INITIAL_ADMIN_PASS: -1} (env var)"
+echo "admin password file check: \$(test -f /data/bluespice/initialAdminPassword && echo 'exists' || echo 'missing')"
+echo "final admin pass: ${adminPass:0:1}********${adminPass: -1}"
 echo "wiki name: $WIKI_NAME"
 echo "timestamp: $timestamp"
 echo ""
@@ -484,6 +491,14 @@ run_bluespice_install() {
     docker exec --user root "$container" chmod 777 /run/mysqld
     local admin_password
     admin_password=$(cat "${DATA_DIR}/${WIKI_NAME}/initialAdminPassword")
+    
+    # Verify the password file exists inside the container
+    if ! docker exec "$container" test -f /data/bluespice/initialAdminPassword; then
+        log_info "Password file not found in container, creating it..."
+        docker exec "$container" bash -c "echo '$admin_password' > /data/bluespice/initialAdminPassword"
+        docker exec "$container" chown bluespice:bluespice /data/bluespice/initialAdminPassword
+        docker exec "$container" chmod 600 /data/bluespice/initialAdminPassword
+    fi
     
     log_info "Running BlueSpice installation..."
     
