@@ -6,6 +6,7 @@
 set -euo pipefail
 
 # Source validation library
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/validation.sh"
 
 # Define required configuration variables

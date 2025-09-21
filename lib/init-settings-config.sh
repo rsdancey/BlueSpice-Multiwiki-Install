@@ -411,7 +411,8 @@ setup_interactive_oauth_config() {
         fi
             
         # Add Google OAuth configuration using the centralized function
-        local wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
+        local wikis_dir
+        wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
         local wiki_dir="${wikis_dir}/${wiki_name}"
         local local_post_init_file="${wiki_dir}/post-init-settings.php"
         
@@ -427,7 +428,7 @@ setup_interactive_oauth_config() {
         echo "OAuth configuration added successfully!"
             
         # Store OAuth settings in .env file for reference
-        local env_file="${WIKIS_DIR}/${wiki_name}/.env"
+        local env_file="${wikis_dir}/${wiki_name}/.env"
         {
             echo ""
             echo "# Google OAuth Settings"
@@ -438,7 +439,8 @@ setup_interactive_oauth_config() {
     else
         log_info "OAuth configuration skipped"
         # Add placeholder configuration using the centralized function
-        local wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
+        local wikis_dir
+        wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
         local wiki_dir="${wikis_dir}/${wiki_name}"
         local local_post_init_file="${wiki_dir}/post-init-settings.php"
         

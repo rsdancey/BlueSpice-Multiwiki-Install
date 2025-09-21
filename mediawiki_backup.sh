@@ -66,7 +66,7 @@ create_backup_dir() {
 get_db_password() {
     if [[ -z "$DB_PASSWORD" ]]; then
         echo -n "Enter database password for user $DB_USER: "
-        read -s DB_PASSWORD
+        read -rs DB_PASSWORD
         echo
     fi
 }
@@ -124,7 +124,7 @@ backup_files() {
     
     # Copy MediaWiki installation
     log "Backing up MediaWiki installation directory..."
-    if rsync -avh $exclude_args "$MEDIAWIKI_PATH/" "$files_backup_dir/" 2>>"$LOG_FILE"; then
+    if rsync -avh "$exclude_args" "$MEDIAWIKI_PATH/" "$files_backup_dir/" 2>>"$LOG_FILE"; then
         success "MediaWiki files backup completed"
     else
         error "MediaWiki files backup failed!"
@@ -216,12 +216,14 @@ Backup Contents:
 EOF
     
     # List all files in backup
-    find "$BACKUP_DIR" -type f -exec ls -lh {} \; >> "$manifest_file"
-    
-    # Add disk usage summary
-    echo "" >> "$manifest_file"
-    echo "Backup Size Summary:" >> "$manifest_file"
-    du -sh "$BACKUP_DIR" >> "$manifest_file"
+    {
+        find "$BACKUP_DIR" -type f -exec ls -lh {} \;
+        
+        # Add disk usage summary
+        echo ""
+        echo "Backup Size Summary:"
+        du -sh "$BACKUP_DIR"
+    } >> "$manifest_file"
     
     success "Backup manifest created"
 }
@@ -309,7 +311,8 @@ main() {
     cleanup_old_backups
     
     # Calculate total backup size
-    local total_size=$(du -sh "$BACKUP_DIR" | cut -f1)
+    local total_size
+    total_size=$(du -sh "$BACKUP_DIR" | cut -f1)
     
     success "MediaWiki backup completed successfully!"
     success "Backup location: $BACKUP_DIR"

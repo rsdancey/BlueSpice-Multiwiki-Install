@@ -58,6 +58,7 @@ run_docker_compose() {
     mapfile -t COMPOSE_FILES < <(build_compose_args)
     
     # Execute Docker Compose with native output
+    # shellcheck disable=SC2086  # command may contain multiple arguments
     docker compose --env-file .shared.env "${COMPOSE_FILES[@]}" $command
 }
 

@@ -10,12 +10,17 @@ FRESH_INSTALL="false"
 export UPGRADE_ACTION=""
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 # Source logging functions
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/logging.sh"
 
 # Colors for output
+# shellcheck disable=SC2034
 RED='\033[0;31m'
+# shellcheck disable=SC2034
 GREEN='\033[0;32m'
+# shellcheck disable=SC2034
 YELLOW='\033[1;33m'
+# shellcheck disable=SC2034
 NC='\033[0m' # No Color
 
 # Logging functions
@@ -390,6 +395,7 @@ create_bluespice_files() {
     log_info "Patching installer to force table creation..."
     # Patch installer to use network connections
     log_info "Patching installer to use network connections..."
+    # shellcheck disable=SC1078,SC1079,SC2026
     docker exec "$container" bash -c 'cat > /app/bin/run-installation.d/020-install-database << "SOCKET_PATCH_EOF"
 #!/bin/bash
 
@@ -419,6 +425,7 @@ echo "installdbuser: $installdbuser"
 echo "installdbpass: ${installdbpass:0:1}********${installdbpass: -1}"
 echo "lang: $lang"
 echo "admin user: $adminUserName"
+# shellcheck disable=SC1078,SC1079,SC2026
 echo "admin password source: \${WIKI_INITIAL_ADMIN_PASS:0:1}********\${WIKI_INITIAL_ADMIN_PASS: -1} (env var)"
 echo "admin password file check: \$(test -f /data/bluespice/initialAdminPassword && echo 'exists' || echo 'missing')"
 echo "final admin pass: ${adminPass:0:1}********${adminPass: -1}"

@@ -6,8 +6,11 @@
 set -euo pipefail
 
 # Source required libraries
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/docker-utils.sh"
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/validation.sh"
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/init-settings-config.sh"
 
 # Get consistent post-init file path
@@ -133,6 +136,7 @@ install_auth_extensions() {
     fi
     
     # Cleanup function
+    # shellcheck disable=SC2329
     cleanup_temp() {
         cd /
         [[ -n "${temp_dir:-}" ]] && rm -rf "$temp_dir"
@@ -199,7 +203,8 @@ configure_extension_loading() {
     echo "⚙️ Configuring extension loading..."
     
     # Construct the wiki directory path and post-init file path
-    local wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
+    local wikis_dir
+    wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
     local wiki_dir="${wikis_dir}/${wiki_name}"
     local post_init_file="${wiki_dir}/post-init-settings.php"
     
