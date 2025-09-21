@@ -192,7 +192,7 @@ install_auth_extensions() {
         " 2>/dev/null; then
             echo "  ✓ Composer installed successfully at /app/bluespice/w/composer.phar"
         else
-            echo "  ❌ Failed to install Composer using official method - trying alternative..."
+            echo "  ❌ Failed to install Composer using official method"
             composer_failed=true
         fi
     else
