@@ -324,7 +324,7 @@ create-init-settings-config-files() {
 
 # Copy configuration files to running container
 copy_config_files_to_container() {
-    local container_name="$1"
+    local wiki_name="$1"
     local wiki_dir="$2"
     local pre_init_file="${wiki_dir}/pre-init-settings.php"
     local post_init_file="${wiki_dir}/post-init-settings.php"
@@ -333,30 +333,30 @@ copy_config_files_to_container() {
     
     # Create pre-init-settings.php in container with correct ownership
     if [[ -f "$pre_init_file" ]]; then
+        if ! docker_copy_to_container "$wiki_name" "$pre_init_file" "/data/bluespice/"; then
+            echo "❌ Failed to copy pre-init-settings.php to container"
+            return 1
+        fi
 
-        if ! docker_copy_to_container "$container_name" "$pre_init_file" "/data/bluespice/"; then
-        echo "❌ Failed to copy pre-init-settings.php to container"
-        return 1
+        if ! docker_set_ownership "$wiki_name" "/data/bluespice/pre-init-settings.php"; then
+            echo "❌ Failed to set ownership for pre-init-settings.php in container"
+            return 1
+        fi
     fi
-
-    if ! docker_set_ownership "$container_name" "/data/bluespice/$pre_init_file"; then
-        echo "❌ Failed to set ownership for pre-init-file.php in container"
-        return 1
-    fi
-
 
     # Create post-init-settings.php in container with correct ownership
     if [[ -f "$post_init_file" ]]; then
+        if ! docker_copy_to_container "$wiki_name" "$post_init_file" "/data/bluespice/"; then
+            echo "❌ Failed to copy post-init-settings.php to container"
+            return 1
+        fi
 
-        if ! docker_copy_to_container "$container_name" "$post_init_file" "/data/bluespice/"; then
-        echo "❌ Failed to copy pre-init-settings.php to container"
-        return 1
+        if ! docker_set_ownership "$wiki_name" "/data/bluespice/post-init-settings.php"; then
+            echo "❌ Failed to set ownership for post-init-settings.php in container"
+            return 1
+        fi
     fi
-
-    if ! docker_set_ownership "$container_name" "/data/bluespice/$post_init_file"; then
-        echo "❌ Failed to set ownership for pre-init-file.php in container"
-        return 1
-    fi
+    
     return 0
 }
 
@@ -364,7 +364,6 @@ copy_config_files_to_container() {
 setup_interactive_oauth_config() {
     local wiki_name="$1"
     local wiki_domain="$2"
-    local container_name="bluespice-${wiki_name}-wiki-web"
     
     echo ""
     echo "==================================================================="
