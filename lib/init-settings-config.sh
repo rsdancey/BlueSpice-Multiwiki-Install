@@ -53,9 +53,9 @@ PREINIT_EOF
     log_info "Created pre-init-settings.php successfully"
     log_info "File size: $(wc -c < "$pre_init_file") bytes"
     
-    # Set correct ownership for Docker container (bluespice user UID:GID is typically 1000:1000)
+    # Set correct ownership for Docker container (bluespice user UID:GID is typically bluespice:bluespice)
     if command -v chown >/dev/null 2>&1; then
-        chown 1000:1000 "$pre_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
+        chown bluespice:bluespice "$pre_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
     fi
     return 0
 }
@@ -116,9 +116,9 @@ POSTINIT_BASE_EOF
     
     log_info "Created base post-init-settings.php"
     
-    # Set correct ownership for Docker container (bluespice user UID:GID is typically 1000:1000)
+    # Set correct ownership for Docker container (bluespice user UID:GID is typically bluespice:bluespice)
     if command -v chown >/dev/null 2>&1; then
-        chown 1000:1000 "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
+        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
     fi
     
     return 0
@@ -165,7 +165,7 @@ SMTP_CONFIG_EOF
     
     # Set correct ownership for Docker container
     if command -v chown >/dev/null 2>&1; then
-        chown 1000:1000 "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
+        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
     fi
     
     log_info "SMTP configuration added successfully"
@@ -193,7 +193,7 @@ AUTH_EXTENSIONS_EOF
     
     # Set correct ownership for Docker container
     if command -v chown >/dev/null 2>&1; then
-        chown 1000:1000 "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
+        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
     fi
     
     log_info "OAuth extension loading configuration added"
@@ -250,7 +250,7 @@ OAUTH_CONFIG_EOF
     
     # Set correct ownership for Docker container
     if command -v chown >/dev/null 2>&1; then
-        chown 1000:1000 "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
+        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
     fi
     
     log_info "Google OAuth configuration added successfully"
@@ -308,7 +308,7 @@ OAUTH_PLACEHOLDER_EOF
     
     # Set correct ownership for Docker container
     if command -v chown >/dev/null 2>&1; then
-        chown 1000:1000 "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
+        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
     fi
     
     log_info "OAuth placeholder configuration added"
@@ -364,20 +364,15 @@ copy_config_files_to_container() {
     local post_init_file="${wiki_dir}/post-init-settings.php"
     local copy_success=true
     
-    log_info "Copying configuration files to running container..."
+    log_info "Creating configuration files directly in container with correct ownership..."
     
-    # Copy pre-init-settings.php
+    # Create pre-init-settings.php directly in container with correct ownership
     if [[ -f "$pre_init_file" ]]; then
-        if docker cp "$pre_init_file" "${container_name}:/data/bluespice/pre-init-settings.php"; then
-            log_info "✓ Copied pre-init-settings.php to container"
-            # Fix ownership inside container
-            if docker exec "$container_name" chown 1000:1000 /data/bluespice/pre-init-settings.php 2>/dev/null; then
-                log_info "✓ Fixed ownership of pre-init-settings.php in container"
-            else
-                log_warn "Could not fix ownership of pre-init-settings.php in container"
-            fi
+        log_info "Creating pre-init-settings.php in container..."
+        if docker exec --user bluespice:bluespice "$container_name" bash -c "cat > /data/bluespice/pre-init-settings.php" < "$pre_init_file"; then
+            log_info "✓ Created pre-init-settings.php in container with bluespice ownership"
         else
-            log_warn "Failed to copy pre-init-settings.php to container"
+            log_error "Failed to create pre-init-settings.php in container"
             copy_success=false
         fi
     else
@@ -385,18 +380,13 @@ copy_config_files_to_container() {
         copy_success=false
     fi
     
-    # Copy post-init-settings.php
+    # Create post-init-settings.php directly in container with correct ownership
     if [[ -f "$post_init_file" ]]; then
-        if docker cp "$post_init_file" "${container_name}:/data/bluespice/post-init-settings.php"; then
-            log_info "✓ Copied post-init-settings.php to container"
-            # Fix ownership inside container
-            if docker exec "$container_name" chown 1000:1000 /data/bluespice/post-init-settings.php 2>/dev/null; then
-                log_info "✓ Fixed ownership of post-init-settings.php in container"
-            else
-                log_warn "Could not fix ownership of post-init-settings.php in container"
-            fi
+        log_info "Creating post-init-settings.php in container..."
+        if docker exec --user bluespice:bluespice "$container_name" bash -c "cat > /data/bluespice/post-init-settings.php" < "$post_init_file"; then
+            log_info "✓ Created post-init-settings.php in container with bluespice ownership"
         else
-            log_warn "Failed to copy post-init-settings.php to container"
+            log_error "Failed to create post-init-settings.php in container"
             copy_success=false
         fi
     else
