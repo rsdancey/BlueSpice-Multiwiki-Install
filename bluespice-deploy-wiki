@@ -220,7 +220,24 @@ create_data_directories() {
     # Ensure /data directory is writable by bluespice user
     docker_set_ownership "$WIKI_NAME" "/data"
     
+    # Debug: Check container status before docker_exec_safe calls
+    log_info "DEBUG: Checking container status for wiki: $WIKI_NAME"
+    local expected_container_name="bluespice-${WIKI_NAME}-wiki-web"
+    log_info "DEBUG: Expected container name: $expected_container_name"
+    log_info "DEBUG: Container prefix from env: ${CONTAINER_PREFIX:-NOT_SET}"
+    
+    # Check if container is running
+    if docker ps --filter name="$expected_container_name" --format "{{.Names}}" | grep -q "^${expected_container_name}$"; then
+        log_info "DEBUG: ✅ Container $expected_container_name is running"
+    else
+        log_error "DEBUG: ❌ Container $expected_container_name is NOT running"
+        log_info "DEBUG: Currently running containers:"
+        docker ps --format "table {{.Names}}\t{{.Status}}"
+        return 1
+    fi
+    
     # Create dummy MySQL socket directory to satisfy PHP configuration
+    log_info "DEBUG: About to execute docker_exec_safe command..."
     docker_exec_safe "$WIKI_NAME" "mkdir -p /run/mysqld"
     docker_exec_safe "$WIKI_NAME" "chmod 777 /run/mysqld"
     
@@ -468,7 +485,7 @@ deploy_wiki() {
         
         # Stop task container temporarily to prevent database connection issues
         log_info "Stopping task container temporarily..."
-        docker stop "${CONTAINER_PREFIX}-wiki-task" || true
+        docker stop "${CONTAINER_PREFIX}-wiki-task"
         sleep 10
         
         if wait_for_healthy "${CONTAINER_PREFIX}-wiki-web"; then

@@ -68,7 +68,12 @@ docker_exec_safe() {
         return 1
     fi
     
-    docker exec --user root "$container_name" "$@"
+    if ! docker exec --user root "$container_name" "$@"; then
+        echo "❌ Docker exec failed!" >&2
+        echo "   Container: $container_name" >&2
+        echo "   Command: $*" >&2
+        return 1
+    fi
 }
 
 # Copy file to container with error checking
