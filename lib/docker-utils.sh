@@ -68,7 +68,7 @@ docker_exec_safe() {
         return 1
     fi
     
-    if ! docker exec --user root "$container_name" "$remote_command"; then
+    if ! docker exec --user root "$container_name" sh -c "$remote_command"; then
         log_error "❌ Docker exec failed!"
         log_error "   Container: $container_name"
         log_error "   Command: $remote_command"
