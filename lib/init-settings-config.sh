@@ -161,7 +161,7 @@ add_oauth_extensions_config() {
 # ============================================
 # OAuth Extensions Loading
 # ============================================
-
+# test
 # Load web-only auth integrations (skip for CLI/maintenance)
 if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
     wfLoadExtension( 'PluggableAuth' );
