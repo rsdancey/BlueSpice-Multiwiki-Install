@@ -55,7 +55,7 @@ create_post_init_settings() {
     
     log_info "Creating post-init-settings.php with base configuration..."
     log_info "Wiki dir: $wiki_dir"
-    log_info "Pre-init file path: $pre_init_file"
+    log_info "Pre-init file path: $post_init_file"
     
     cat > "$post_init_file" << POSTINIT_BASE_EOF
 <?php
