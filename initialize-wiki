@@ -273,7 +273,8 @@ deploy_wiki_instance() {
 
     # Install and configure OAuth extensions using the new modular system
     log_info "Setting up OAuth extensions..."
-    if ! setup_oauth_extensions "$WIKI_NAME" "$WIKI_DOMAIN"; then
+    # need post-init-settings file here
+    if ! setup_oauth_extensions "$WIKI_NAME" "$wiki_dir" "$WIKI_DOMAIN"; then
         log_error "CRITICAL: OAuth extension setup failed"
         log_warn "Wiki is functional but OAuth authentication will not work"
         log_warn "Manual intervention may be required"

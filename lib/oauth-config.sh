@@ -203,7 +203,6 @@ install_auth_extensions() {
         return 1
     fi
 
-    echo "  ✅ Verifying installation..."
     # Check if both extension.json files exist
     if ! docker_exec_safe "$wiki_name" "test -f /app/bluespice/w/extensions/PluggableAuth/extension.json"; then
         log_error "❌ PluggableAuth extension.json not found"
@@ -224,6 +223,8 @@ install_auth_extensions() {
 # Complete OAuth setup process
 setup_oauth_extensions() {
     local wiki_name="$1"
+    local wiki_dir="$2"
+    local post_init_file="$2"
     
     log_info "🚀 Starting OAuth extension setup for $wiki_name..."
     
@@ -236,7 +237,7 @@ setup_oauth_extensions() {
         fi
         
         # Configure extension loading
-        if ! add_oauth_extensions_config "$wiki_name"; then
+        if ! add_oauth_extensions_config "$wiki_name" "$wiki_dir"; then
             log_error "❌ Failed to configure authentication extensions"
             return 1
         fi

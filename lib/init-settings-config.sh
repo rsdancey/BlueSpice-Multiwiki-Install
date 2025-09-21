@@ -150,7 +150,9 @@ SMTP_CONFIG_EOF
 # Add OAuth extension loading configuration
 add_oauth_extensions_config() {
     local wiki_name="$1"
-    local post_init_file="$2"
+    local wiki_dir="$2"
+    local post_init_file="${wiki_dir}/post-init-settings.php"
+
         
     log_info "Adding OAuth extension loading configuration..."
     
@@ -182,11 +184,10 @@ AUTH_EXTENSIONS_EOF
 # Add Google OAuth configuration
 add_google_oauth_config() {
     local post_init_file="$1"
-    local wiki_domain="$2"
-    local oauth_client_id="$3"
-    local oauth_client_secret="$4"
-    local create_if_not_exist="$5"
-    local email_matching_only="$6"
+    local oauth_client_id="$2"
+    local oauth_client_secret="$3"
+    local create_if_not_exist="$4"
+    local email_matching_only="$5"
     
     log_info "Adding Google OAuth configuration..."
     
@@ -419,7 +420,7 @@ setup_interactive_oauth_config() {
         local wiki_dir="${wikis_dir}/${wiki_name}"
         local local_post_init_file="${wiki_dir}/post-init-settings.php"
         
-        if ! add_google_oauth_config "$local_post_init_file" "$wiki_domain" "$oauth_client_id" "$oauth_client_secret" "$create_if_not_exist" "$email_matching_only"; then
+        if ! add_google_oauth_config "$local_post_init_file" "$oauth_client_id" "$oauth_client_secret" "$create_if_not_exist" "$email_matching_only"; then
             echo "❌ Failed to add OAuth configuration" >&2
             return 1
         fi
