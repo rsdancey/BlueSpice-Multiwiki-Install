@@ -201,12 +201,6 @@ if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
 }
 AUTH_EXTENSIONS_EOF
     
-    # Set correct ownership for Docker container
-    if ! docker_set_ownership "$wiki_name" "$post_init_file"; then
-     log_info "Note: Could not set file ownership (may require sudo)"
-     return 1
-    fi
-    
     log_info "OAuth extension loading configuration added"
     return 0
 }
@@ -258,11 +252,6 @@ add_google_oauth_config() {
 \$wgOpenIDConnect_MigrateUsersByEmail = true;
 \$wgOpenIDConnect_UseRealNameAsUserName = false;
 OAUTH_CONFIG_EOF
-    
-    # Set correct ownership for Docker container
-    if command -v chown >/dev/null 2>&1; then
-        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
-    fi
     
     log_info "Google OAuth configuration added successfully"
     return 0
@@ -316,11 +305,6 @@ $wgPluggableAuth_Config["Google"] = [
 \$wgOpenIDConnect_UseRealNameAsUserName = false;
 */
 OAUTH_PLACEHOLDER_EOF
-    
-    # Set correct ownership for Docker container
-    if command -v chown >/dev/null 2>&1; then
-        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
-    fi
     
     log_info "OAuth placeholder configuration added"
     return 0
