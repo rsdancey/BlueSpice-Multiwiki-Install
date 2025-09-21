@@ -648,15 +648,16 @@ main() {
             echo "Main function returning with exit code: $exit_code"
             exit $exit_code
         fi
-        
-        if ! create-init-settings-config-files "${WIKIS_DIR}/${WIKI_NAME}" "$WIKI_NAME"; then
-            log_error "Failed to create init-settings files"
-            local exit_code=1
-            echo "Main function returning with exit code: $exit_code"
-            exit $exit_code
-        fi
     else
         log_info "Using existing directory - skipping directory and environment setup"
+    fi
+        
+    # create the init-settings files
+    if ! create-init-settings-config-files "${WIKIS_DIR}/${WIKI_NAME}" "$WIKI_NAME"; then
+        log_error "Failed to create init-settings files"
+        local exit_code=1
+        echo "Main function returning with exit code: $exit_code"
+        exit $exit_code
     fi
     
     # Deploy wiki with OAuth extensions
