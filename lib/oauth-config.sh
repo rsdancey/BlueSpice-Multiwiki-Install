@@ -178,10 +178,29 @@ install_auth_extensions() {
         return 1
     fi
 
-    # Install OpenIDConnect PHP dependencies using Composer
+    # Install Composer in the container if not already present
+    echo "  📦 Installing Composer in container..."
+    if ! docker_exec_safe "$wiki_name" test -f /app/bluespice/w/composer.phar 2>/dev/null; then
+        echo "  📥 Downloading and installing Composer..."
+        if docker_exec_safe "$wiki_name" bash -c "
+            cd /app/bluespice/w &&
+            curl -sS https://getcomposer.org/installer | php -- --filename=composer.phar &&
+            chmod +x composer.phar
+        " 2>/dev/null; then
+            echo "  ✓ Composer installed successfully"
+        else
+            echo "  ⚠️ Failed to install Composer, will use manual dependency installation"
+        fi
+    else
+        echo "  ✓ Composer already available"
+    fi
+
+    # Install OpenIDConnect PHP dependencies using the specific commands
     echo "  📦 Installing OpenIDConnect PHP dependencies..."
-    if docker_exec_safe "$wiki_name" bash -c "cd /app/bluespice/w/extensions/OpenIDConnect && composer install --no-dev --optimize-autoloader" 2>/dev/null; then
-        echo "  ✓ OpenIDConnect dependencies installed successfully"
+    if docker_exec_safe "$wiki_name" bash -c "cd /app/bluespice/w/extensions/OpenIDConnect && php /app/bluespice/w/composer.phar install --no-dev" 2>/dev/null; then
+        echo "  ✓ OpenIDConnect dependencies installed successfully (method 1)"
+    elif docker_exec_safe "$wiki_name" sh -c "cd /app/bluespice/w/extensions/OpenIDConnect && /app/bluespice/w/composer.phar install" 2>/dev/null; then
+        echo "  ✓ OpenIDConnect dependencies installed successfully (method 2)"
     else
         echo "  ⚠️ Failed to install Composer dependencies, trying manual installation..."
         # Fallback: manually install the required library with proper autoloader
