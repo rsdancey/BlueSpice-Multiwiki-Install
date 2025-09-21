@@ -174,8 +174,9 @@ SMTP_CONFIG_EOF
 
 # Add OAuth extension loading configuration
 add_oauth_extensions_config() {
-    local post_init_file="$1"
-    
+    local wiki_name="$1"
+    local post_init_file="$2"
+        
     log_info "Adding OAuth extension loading configuration..."
     
     cat >> "$post_init_file" << 'AUTH_EXTENSIONS_EOF'
@@ -201,8 +202,9 @@ if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
 AUTH_EXTENSIONS_EOF
     
     # Set correct ownership for Docker container
-    if command -v chown >/dev/null 2>&1; then
-        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
+    if ! docker_set_ownership "$wiki_name", "$post_init_file"; then
+     log_info "Note: Could not set file ownership (may require sudo)"
+     return 1
     fi
     
     log_info "OAuth extension loading configuration added"

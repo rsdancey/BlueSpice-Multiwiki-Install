@@ -253,7 +253,7 @@ configure_extension_loading() {
     local post_init_file="${wiki_dir}/post-init-settings.php"
     
     # Use the new init-settings-config library function
-    if ! add_oauth_extensions_config "$post_init_file"; then
+    if ! add_oauth_extensions_config "$wiki_name" "$post_init_file"; then
         echo "❌ Failed to add OAuth extension configuration" >&2
         return 1
     fi
