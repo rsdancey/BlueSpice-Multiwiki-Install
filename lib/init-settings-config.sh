@@ -202,7 +202,7 @@ if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
 AUTH_EXTENSIONS_EOF
     
     # Set correct ownership for Docker container
-    if ! docker_set_ownership "$wiki_name", "$post_init_file"; then
+    if ! docker_set_ownership "$wiki_name" "$post_init_file"; then
      log_info "Note: Could not set file ownership (may require sudo)"
      return 1
     fi
