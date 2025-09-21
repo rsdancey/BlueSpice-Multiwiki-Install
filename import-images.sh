@@ -79,7 +79,8 @@ validate_wiki() {
     fi
     
     # Check if wiki container is running
-    local container_name="bluespice-$wiki_name-wiki-web"
+    local container_name
+    container_name=$(get_container_name "$wiki_name")
     if ! docker ps --format "table {{.Names}}" | grep -q "^$container_name$"; then
         log_error "Wiki container not running: $container_name"
         log_info "Please start the wiki first using:"
@@ -117,7 +118,8 @@ validate_images_archive() {
 # Function to backup current images
 backup_current_images() {
     local wiki_name="$1"
-    local container_name="bluespice-$wiki_name-wiki-web"
+    local container_name
+    container_name=$(get_container_name "$wiki_name")
     local backup_dir
     backup_dir="/tmp/images_backup_$(date +%Y%m%d_%H%M%S)"
     
@@ -148,7 +150,8 @@ get_bluespice_uid() {
 import_images() {
     local wiki_name="$1"
     local archive_path="$2"
-    local container_name="bluespice-$wiki_name-wiki-web"
+    local container_name
+    container_name=$(get_container_name "$wiki_name")
     local temp_dir
     temp_dir="/tmp/images_import_$(date +%Y%m%d_%H%M%S)"
     
@@ -244,7 +247,8 @@ import_images() {
 # Function to rebuild images database
 rebuild_images_database() {
     local wiki_name="$1"
-    local container_name="bluespice-$wiki_name-wiki-web"
+    local container_name
+    container_name=$(get_container_name "$wiki_name")
     
     log_info "Importing images into database..."
     

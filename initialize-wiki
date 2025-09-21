@@ -263,8 +263,6 @@ deploy_wiki_instance() {
         exit 1
     fi
     
-    log_info "Wiki deployed successfully"
-
     # Wait for container to be fully ready before installing extensions
     log_info "Waiting for wiki container to be ready..."
     if ! wait_for_container_ready "$WIKI_NAME" 60; then
@@ -363,10 +361,13 @@ restore_from_backup() {
         echo "Detected MediaWiki XML dump - using importDump.php"
         
         # Copy XML file to wiki container
-        docker cp "$temp_sql" "bluespice-${WIKI_NAME}-wiki-web:/tmp/restore.xml"
+        if ! docker_copy_to_container "$WIKI_NAME" "$temp_sql" "/tmp/restore.xml"; then
+            echo "Error: Failed to copy XML dump to container" >&2
+            return 1
+        fi
         
         # Use MediaWiki importDump maintenance script
-        if docker exec "bluespice-${WIKI_NAME}-wiki-web" php /app/bluespice/w/maintenance/importDump.php /tmp/restore.xml; then
+        if docker_exec_safe "$WIKI_NAME" "php /app/bluespice/w/maintenance/importDump.php /tmp/restore.xml"; then
             echo "✓ Wiki content restored successfully from XML dump"
         else
             echo "Error: XML dump import failed" >&2
@@ -374,7 +375,7 @@ restore_from_backup() {
         fi
         
         # Clean up
-        docker exec "bluespice-${WIKI_NAME}-wiki-web" rm -f /tmp/restore.xml
+        docker_exec_safe "$WIKI_NAME" "rm -f /tmp/restore.xml"
         
     else
         echo "Error: Unable to determine backup file format (not SQL or XML)" >&2
@@ -385,7 +386,7 @@ restore_from_backup() {
     echo "Running MediaWiki maintenance updates..."
     
     # Update database schema and cache
-    if docker exec "bluespice-${WIKI_NAME}-wiki-web" php /app/bluespice/w/maintenance/update.php --quick; then
+    if docker_exec_safe "$WIKI_NAME" "php /app/bluespice/w/maintenance/update.php --quick"; then
         echo "✓ Database schema updated"
     else
         echo "Warning: Database schema update encountered issues"
@@ -393,7 +394,7 @@ restore_from_backup() {
     
     # Rebuild recent changes
     echo "Rebuilding recent changes..."
-    docker exec "bluespice-${WIKI_NAME}-wiki-web" php /app/bluespice/w/maintenance/rebuildrecentchanges.php || true
+    docker_exec_safe "$WIKI_NAME" "php /app/bluespice/w/maintenance/rebuildrecentchanges.php" || true
     
     # Clean up local temporary files
     rm -f "$temp_sql"
@@ -402,14 +403,11 @@ restore_from_backup() {
     return 0
 }
 
-
-
-
 # Images import function using images import script
 show_completion_info() {
     echo
     echo "================================================"
-    echo "Wiki initialization completed successfully!"
+    log_info "Wiki initialization completed successfully!"
     echo "================================================"
     echo
     echo "Wiki Details:"

@@ -410,7 +410,7 @@ run_bluespice_install() {
     # Verify the password file exists inside the container
     if ! docker_exec_safe "$WIKI_NAME" "test -f /data/bluespice/initialAdminPassword"; then
         log_info "Password file not found in container, creating it..."
-        docker_exec_safe "$WIKI_NAME" "bash -c \"echo '$admin_password' > /data/bluespice/initialAdminPassword\""
+        docker_exec_safe "$WIKI_NAME" "echo '$admin_password' > /data/bluespice/initialAdminPassword"
         docker_exec_safe "$WIKI_NAME" "chown bluespice:bluespice /data/bluespice/initialAdminPassword"
         docker_exec_safe "$WIKI_NAME" "chmod 600 /data/bluespice/initialAdminPassword"
     fi
@@ -491,12 +491,7 @@ deploy_wiki() {
 
 
             # Ensure temp directory exists in task container as well
-            docker_exec_safe "$WIKI_NAME" "sh -lc 'mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}'"
-            
-            log_info "Wiki deployment completed successfully!"
-            echo ""
-            echo "Access your wiki at: https://${WIKI_FQDN}"
-            echo "Admin password saved in: ${DATA_DIR}/${WIKI_NAME}/initialAdminPassword"
+            docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}"
         else
             log_error "Wiki deployment failed - container did not become healthy"
             exit 1
@@ -506,9 +501,8 @@ deploy_wiki() {
         cd "/core/wikis/${WIKI_NAME}"
         docker compose -f docker-compose.main.yml -f docker-compose.helper-service.yml up -d
         
-        # Ensure temp directory exists in web and task containers after start
-        docker_exec_safe "$WIKI_NAME" "sh -lc 'mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}'"
-        docker_exec_safe "$WIKI_NAME" "sh -lc 'mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}'"
+        # Ensure temp directory exists in web container after start
+        docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}"
 
         log_info "Wiki started successfully!"
     fi

@@ -16,11 +16,11 @@ source "${SCRIPT_DIR}/lib/init-settings-config.sh"
 
 # Check if authentication extensions need to be installed
 check_auth_extensions_needed() {
-    local container_name="$1"
+    local wiki_name="$1"
     
     # Check if extensions already exist
-    if docker_exec_safe "$container_name" test -d /app/bluespice/w/extensions/PluggableAuth 2>/dev/null && \
-       docker_exec_safe "$container_name" test -d /app/bluespice/w/extensions/OpenIDConnect 2>/dev/null; then
+    if docker_exec_safe "$wiki_name" test -d /app/bluespice/w/extensions/PluggableAuth 2>/dev/null && \
+       docker_exec_safe "$wiki_name" test -d /app/bluespice/w/extensions/OpenIDConnect 2>/dev/null; then
         log_info "✓ Authentication extensions already installed"
         return 1
     fi
@@ -98,13 +98,13 @@ extract_extension() {
 
 # Install authentication extensions
 install_auth_extensions() {
-    local container_name="$1"
+    local wiki_name="$1"
     local temp_dir="/tmp/mw_extensions_$$"
 
-    log_info "🔧 Installing authentication extensions for $container_name..."
+    log_info "🔧 Installing authentication extensions for $wiki_name..."
     
     # Ensure container is ready
-    if ! wait_for_container_ready "$container_name" 30; then
+    if ! wait_for_container_ready "$wiki_name" 30; then
         log_error "❌ Container not ready for extension installation" >&2
         return 1
     fi
@@ -117,14 +117,14 @@ install_auth_extensions() {
     
     # Download PluggableAuth extension
     if ! download_extension "PluggableAuth" "$temp_dir" \
-        "https://extdist.wmflabs.org/dist/extensions/PluggableAuth-REL1_44-cea83e0.tar.gz .tar.gz" \
+        "https://extdist.wmflabs.org/dist/extensions/PluggableAuth-REL1_44-cea83e0.tar.gz" \
         "https://github.com/wikimedia/mediawiki-extensions-PluggableAuth/archive/refs/heads/REL1_43.tar.gz"; then
         return 1
     fi
     
     # Download OpenIDConnect extension
     if ! download_extension "OpenIDConnect" "$temp_dir" \
-        "https://extdist.wmflabs.org/dist/extensions/OpenIDConnect-REL1_44-31ecc84.tar.gz .tar.gz" \
+        "https://extdist.wmflabs.org/dist/extensions/OpenIDConnect-REL1_44-31ecc84.tar.gz" \
         "https://github.com/wikimedia/mediawiki-extensions-OpenIDConnect/archive/refs/heads/REL1_43.tar.gz"; then
         return 1
     fi
@@ -140,31 +140,31 @@ install_auth_extensions() {
     
     # Copy extensions to container
     echo "  📋 Installing extensions in container..."
-    if ! docker_copy_to_container "$container_name" "$temp_dir/PluggableAuth" "/app/bluespice/w/extensions/"; then
+    if ! docker_copy_to_container "$wiki_name" "$temp_dir/PluggableAuth" "/app/bluespice/w/extensions/"; then
         log_error "❌ Failed to copy PluggableAuth to container" >&2
         return 1
     fi
 
-    if ! docker_set_ownership "$container_name" "/app/bluespice/w/extensions/PluggableAuth"; then
+    if ! docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/PluggableAuth"; then
         log_error "❌ Failed to set ownership for PluggableAuth in container" >&2
         return 1
     fi
 
-    if ! docker_copy_to_container "$container_name" "$temp_dir/OpenIDConnect" "/app/bluespice/w/extensions/"; then
+    if ! docker_copy_to_container "$wiki_name" "$temp_dir/OpenIDConnect" "/app/bluespice/w/extensions/"; then
         log_error "❌ Failed to copy OpenIDConnect to container" >&2
         return 1
     fi
 
-    if ! docker_set_ownership "$container_name" "/app/bluespice/w/extensions/OpenIDConnect"; then
+    if ! docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/OpenIDConnect"; then
         log_error "❌ Failed to set ownership for OpenIDConnect in container" >&2
         return 1
     fi
 
     # Install Composer in the container if not already present
     log_info "  📦 Installing Composer in container..."
-    if ! docker_exec_safe "$container_name" test -f /app/bluespice/w/composer.phar 2>/dev/null; then
+    if ! docker_exec_safe "$wiki_name" test -f /app/bluespice/w/composer.phar 2>/dev/null; then
         log_info "  📥 Downloading and installing Composer using official method..."
-        if docker_exec_safe "$wiki_name" bash -c "
+        if docker_exec_safe "$wiki_name" "
             cd /app/bluespice/w &&
             php -r \"copy('https://getcomposer.org/installer', 'composer-setup.php');\" &&
             php -r \"if (hash_file('sha384', 'composer-setup.php') === 'ed0feb545ba87161262f2d45a633e34f591ebb3381f2e0063c345ebea4d228dd0043083717770234ec00c5a9f9593792') { echo 'Installer verified'.PHP_EOL; } else { echo 'Installer corrupt'.PHP_EOL; unlink('composer-setup.php'); exit(1); }\" &&
@@ -182,9 +182,9 @@ install_auth_extensions() {
     # Install OpenIDConnect PHP dependencies using the specific commands
     log_info "  📦 Installing OpenIDConnect PHP dependencies..."
     if [[ "${composer_failed:-false}" != "true" ]]; then
-        if docker_exec_safe "$container_name" bash -c "cd /app/bluespice/w/extensions/OpenIDConnect && php /app/bluespice/w/composer.phar install --no-dev"; then
+        if docker_exec_safe "$wiki_name" "cd /app/bluespice/w/extensions/OpenIDConnect && php /app/bluespice/w/composer.phar install --no-dev"; then
             log_info "  ✓ OpenIDConnect dependencies installed successfully (method 1)"
-        elif docker_exec_safe "$container_name" sh -c "cd /app/bluespice/w/extensions/OpenIDConnect && /app/bluespice/w/composer.phar install"; then
+        elif docker_exec_safe "$wiki_name" "cd /app/bluespice/w/extensions/OpenIDConnect && /app/bluespice/w/composer.phar install"; then
             log_info "  ✓ OpenIDConnect dependencies installed successfully (method 2)"
         else
             log_error "  ⚠️ Composer methods failed"
@@ -193,12 +193,12 @@ install_auth_extensions() {
     fi
 
     # Set permissions in container
-    if ! docker_set_ownership "$container_name" "/app/bluespice/w/extensions/PluggableAuth"; then
+    if ! docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/PluggableAuth"; then
         log_error "❌ Failed to set ownership for PluggableAuth in container"
         return 1
     fi
 
-    if ! docker_set_ownership "$container_name" "/app/bluespice/w/extensions/OpenIDConnect"; then
+    if ! docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/OpenIDConnect"; then
         log_error "❌ Failed to set ownership for PluggableAuth in container"
         return 1
     fi
@@ -218,26 +218,26 @@ install_auth_extensions() {
 
 # Complete OAuth setup process
 setup_oauth_extensions() {
-    local container_name="$1"
+    local wiki_name="$1"
     
-    log_info "🚀 Starting OAuth extension setup for $container_name..."
+    log_info "🚀 Starting OAuth extension setup for $wiki_name..."
     
     # Check if extensions need to be installed
-    if check_auth_extensions_needed "$container_name"; then
+    if check_auth_extensions_needed "$wiki_name"; then
         # Install extensions
-        if ! install_auth_extensions "$container_name"; then
+        if ! install_auth_extensions "$wiki_name"; then
             log_error "❌ Failed to install authentication extensions"
             return 1
         fi
         
         # Configure extension loading
-        if ! add_oauth_extensions_config "$container_name"; then
+        if ! add_oauth_extensions_config "$wiki_name"; then
             log_error "❌ Failed to configure authentication extensions"
             return 1
         fi
         
         # Configure OAuth settings
-        if ! setup_interactive_oauth_config "$container_name"; then
+        if ! setup_interactive_oauth_config "$wiki_name"; then
             log_error "❌ Failed to configure OAuth settings"
             return 1
         fi
