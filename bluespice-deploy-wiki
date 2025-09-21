@@ -23,11 +23,6 @@ YELLOW='\033[1;33m'
 # shellcheck disable=SC2034
 NC='\033[0m' # No Color
 
-# Logging functions
-
-
-
-# Load environment variables
 # Help function
 show_help() {
     cat << 'HELP'
@@ -127,8 +122,6 @@ For more information, see the BlueSpice documentation or contact support.
 HELP
 }
 
-
-
 load_environment() {
     if [[ -f "/core/wikis/${WIKI_NAME}/.env" ]]; then
         set -a
@@ -199,6 +192,7 @@ parse_arguments() {
     fi
 }
 
+# USED
 # Create required data directories
 create_data_directories() {
     log_info "Creating required directories for $WIKI_NAME..."
@@ -208,65 +202,68 @@ create_data_directories() {
     if [[ ! -d "$wiki_data_dir" ]]; then
         log_info "Creating wiki data directory: $wiki_data_dir"
         mkdir -p "$wiki_data_dir"
-        chmod 775 "$wiki_data_dir" 2>/dev/null || sudo chmod 775 "$wiki_data_dir" || true
-        # Set ownership to allow container access
-        chown 1002:bluespice "$wiki_data_dir" 2>/dev/null || sudo chown 1002:bluespice "$wiki_data_dir" || true
+        # commenting this out to see if this works without assuming root
+            # chmod 775 "$wiki_data_dir" 2>/dev/null || sudo chmod 775 "$wiki_data_dir" || true
+            # Set ownership to allow container access
+            # chown 1002:bluespice "$wiki_data_dir" 2>/dev/null || sudo chown 1002:bluespice "$wiki_data_dir" || true
     fi
     
     # Ensure all subdirectories have correct ownership
-    sudo chown -R 1002:bluespice "$wiki_data_dir" 2>/dev/null || true
+    # commenting this out to see if this works without assuming root
+    # sudo chown -R 1002:bluespice "$wiki_data_dir" 2>/dev/null || true
     
     local container="${CONTAINER_PREFIX}-wiki-web"
     
     # Ensure /data directory is writable by bluespice user
-    docker exec --user root "$container" chown bluespice:bluespice /data
-    docker exec --user root "$container" chmod 755 /data
+    docker_set_ownership "$WIKI_NAME" "/data"
     
     # Create dummy MySQL socket directory to satisfy PHP configuration
-    docker exec --user root "$container" mkdir -p /run/mysqld
-    docker exec --user root "$container" chmod 777 /run/mysqld
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /run/mysqld"
+    docker_exec_safe "$WIKI_NAME" "chmod 777 /run/mysqld"
     
     # Create BlueSpice-specific subdirectories that containers expect
     # These paths are inside the container at /data/bluespice
-    docker exec "$container" mkdir -p /data/bluespice/logs
-    docker exec "$container" mkdir -p /data/bluespice/simplesamlphp/certs
-    docker exec "$container" mkdir -p /data/bluespice/database
-    docker exec "$container" mkdir -p /data/bluespice/search
-    docker exec "$container" mkdir -p /data/bluespice/bluespice
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /data/bluespice/logs"
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /data/bluespice/simplesamlphp/certs"
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /data/bluespice/database"
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /data/bluespice/search"
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /data/bluespice/bluespice"
     
     # Ensure the entire /data/bluespice has correct ownership first
-    docker exec --user root "$container" chown -R 1002:bluespice /data/bluespice
+    docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /data/bluespice"
 
     # Set proper ownership inside container
-    docker exec "$container" chown -R 1002:bluespice /data/bluespice/database 2>/dev/null || true
-    docker exec "$container" chown -R 1002:bluespice /data/bluespice/bluespice 2>/dev/null || true
-    docker exec "$container" chown -R 1002:bluespice /data/bluespice/simplesamlphp 2>/dev/null || true
-    docker exec "$container" chown -R 1000:1000 /data/bluespice/search 2>/dev/null || true
-    docker exec "$container" chown -R 1002:bluespice /data/bluespice/logs 2>/dev/null || true
+    docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /data/bluespice/database"
+    docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /data/bluespice/bluespice"
+    docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /data/bluespice/simplesamlphp"
+    docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /data/bluespice/search"
+    docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /data/bluespice/logs"
     
     # Ensure temp directory for UUID generator used by GlobalIdGenerator
-    docker exec --user root "$container" mkdir -p "/tmp/${WIKI_NAME}"
-    docker exec --user root "$container" chmod 1777 "/tmp/${WIKI_NAME}"
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/${WIKI_NAME}"
+    docker_exec_safe "$WIKI_NAME" "chmod 1777 /tmp/${WIKI_NAME}"
 
     # Ensure SimpleSAMLphp cert directory for scripts expecting /data/simplesamlphp/certs
-    docker exec "$container" mkdir -p /data/simplesamlphp/certs
-    docker exec --user root "$container" chown -R 1002:bluespice /data/simplesamlphp 2>/dev/null || true
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /data/simplesamlphp/certs"
+    docker_exec_safe "$WIKI_NAME" "chown -R 1002:bluespice /data/simplesamlphp"
 
     log_info "Data directories created for $WIKI_NAME"
 }
 
+# USED but does nothing
 # Fix data directory permissions for BlueSpice
 fix_data_permissions() {
     log_info "Fixing data directory permissions for $WIKI_NAME..."
     
     # The wiki-specific data directory needs to be writable by the bluespice user (UID 1002)
     local wiki_data_dir="${DATA_DIR}/${WIKI_NAME}"
-    sudo chown -R 1002:bluespice "$wiki_data_dir" 2>/dev/null || true
-    sudo chmod -R 775 "$wiki_data_dir" 2>/dev/null || true
+    # sudo chown -R 1002:bluespice "$wiki_data_dir" 2>/dev/null || true
+    # sudo chmod -R 775 "$wiki_data_dir" 2>/dev/null || true
     
     log_info "Data directory permissions fixed for $WIKI_NAME"
 }
 
+# USED
 # Wait for container to be healthy
 wait_for_healthy() {
     local container="$1"
@@ -290,9 +287,9 @@ wait_for_healthy() {
     return 1
 }
 
+# USED
 # Test database connectivity
 test_database_connectivity() {
-    log_info "Verifying database network connectivity..."
     log_info "Testing database connectivity..."
     
     # Test connection directly to the database container using mariadb
@@ -305,7 +302,8 @@ test_database_connectivity() {
     fi
 }
 
-# Create database and user - SIMPLIFIED AND ROBUST
+# USED
+# Create database and user
 create_database_and_user() {
     log_info "Creating database and user..."
     
@@ -347,6 +345,7 @@ SQL_EOF
     log_info "Database and user created successfully"
 }
 
+# USED
 # Generate admin password
 generate_admin_password() {
     local password_file="${DATA_DIR}/${WIKI_NAME}/initialAdminPassword"
@@ -367,152 +366,50 @@ generate_admin_password() {
         echo "$admin_password" > "$password_file"
         
         log_info "Initial admin password generated and saved"
-        log_info "  Admin user: WikiSysop"
-        log_info "  Password: $admin_password"
-        log_info "  Please save this password - it will be displayed only once!"
     fi
 }
 
+# USED
 # Create BlueSpice initialization files
 create_bluespice_files() {
-    local container="${CONTAINER_PREFIX}-wiki-web"
-    
     # Ensure /data directory is writable by bluespice user
-    docker exec --user root "$container" chown bluespice:bluespice /data
-    docker exec --user root "$container" chmod 755 /data
+    docker_exec_safe "$WIKI_NAME" "chown bluespice:bluespice /data"
+    docker_exec_safe "$WIKI_NAME" "chmod 755 /data"
     
     # Create dummy MySQL socket directory to satisfy PHP configuration
-    docker exec --user root "$container" mkdir -p /run/mysqld
-    docker exec --user root "$container" chmod 777 /run/mysqld
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /run/mysqld"
+    docker_exec_safe "$WIKI_NAME" "chmod 777 /run/mysqld"
     
     log_info "Creating BlueSpice initialization files..."
 
     # Fix MediaWiki installer to use network connection with synchronized password
     log_info "Patching MediaWiki installer to use DB_ROOT credentials..."
-    docker exec "$container" sed -i "s/installdbuser=${DB_USER}/installdbuser=${DB_USER}/" /app/bin/run-installation.d/020-install-database
-    docker exec "$container" sed -i "s/installdbpass=${DB_PASS}/installdbpass=${DB_PASS}/" /app/bin/run-installation.d/020-install-database
-    # Force table creation even if installer thinks they exist
-    log_info "Patching installer to force table creation..."
-    # Patch installer to use network connections
-    log_info "Patching installer to use network connections..."
-    # shellcheck disable=SC1078,SC1079,SC2026
-    docker exec "$container" bash -c 'cat > /app/bin/run-installation.d/020-install-database << "SOCKET_PATCH_EOF"
-#!/bin/bash
-
-# Set required environment variables for MediaWiki installer
-export WIKI_NAME="$WIKI_NAME"
-export adminUserName="WikiSysop"
-# Use environment variable if available, otherwise fall back to file
-if [ -n "$WIKI_INITIAL_ADMIN_PASS" ]; then
-    export adminPass="$WIKI_INITIAL_ADMIN_PASS"
-else
-    export adminPass="$(cat /data/bluespice/initialAdminPassword)"
-fi
-
-installdbuser=${DB_USER}
-installdbpass=${DB_PASS}
-lang=${WIKI_LANG:-en}
-timestamp=$(date +%Y%m%d_%H%M%S)
-appDir="/app/bluespice/w"
-
-echo "=== NETWORK-BASED DATABASE INSTALLATION ==="
-echo "Installing database with values:"
-echo "dbserver: database (network)"
-echo "dbname: $DB_NAME"
-echo "dbuser: $DB_USER"
-echo "dbpass: ${DB_PASS:0:1}********${DB_PASS: -1}"
-echo "installdbuser: $installdbuser"
-echo "installdbpass: ${installdbpass:0:1}********${installdbpass: -1}"
-echo "lang: $lang"
-echo "admin user: $adminUserName"
-# shellcheck disable=SC1078,SC1079,SC2026
-echo "admin password source: \${WIKI_INITIAL_ADMIN_PASS:0:1}********\${WIKI_INITIAL_ADMIN_PASS: -1} (env var)"
-echo "admin password file check: \$(test -f /data/bluespice/initialAdminPassword && echo 'exists' || echo 'missing')"
-echo "final admin pass: ${adminPass:0:1}********${adminPass: -1}"
-echo "wiki name: $WIKI_NAME"
-echo "timestamp: $timestamp"
-echo ""
-
-# Remove any existing LocalSettings.php
-if [ -f $appDir/LocalSettings.php ]; then
-    echo "Removing existing LocalSettings.php"
-    rm -f $appDir/LocalSettings.php
-fi
-
-# Clear installation markers
-rm -f $appDir/.installation_complete
-rm -f /data/bluespice/.installation_complete
-
-echo "Starting MediaWiki installation using network connection..."
-
-# Install using network connection (localhost will use the socket proxy)
-# Override PHP MySQL socket configuration to force TCP connection
-php -d mysqli.default_socket="" -d pdo_mysql.default_socket="" $appDir/maintenance/install.php \
-    --force \
-    --dbtype=mysql \
-    --dbserver=database --dbport=3306 \
-    --dbname=$DB_NAME \
-    --installdbuser=$installdbuser \
-    --installdbpass=$installdbpass \
-    --dbuser=$DB_USER \
-    --dbpass=$DB_PASS \
-    --pass=$adminPass \
-    --lang=$lang \
-    --scriptpath=/w \
-    --server="$WIKI_SERVER" \
-    "$WIKI_NAME" \
-    "$adminUserName" \
-    2>&1 | tee -a /data/bluespice/logs/install-$timestamp.log
-
-INSTALL_RESULT=${PIPESTATUS[0]}
-
-if [ $INSTALL_RESULT -eq 0 ]; then
-    echo "✓ MediaWiki installation completed successfully"
-    touch /data/bluespice/.installation_complete
-    echo "$(date): Network-based installation completed successfully" >> /data/bluespice/logs/install-$timestamp.log
-else
-    echo "✗ MediaWiki installation failed"
-    echo "$(date): Installation failed with exit code $INSTALL_RESULT" >> /data/bluespice/logs/install-$timestamp.log
-    exit 1
-fi
-
-# Remove the generated LocalSettings.php as BlueSpice uses its own
-if [ -f $appDir/LocalSettings.php ]; then
-    echo "Removing generated LocalSettings.php (BlueSpice uses its own configuration)"
-    rm $appDir/LocalSettings.php
-fi
-
-echo "=== NETWORK-BASED INSTALLATION COMPLETE ==="
-SOCKET_PATCH_EOF'
+    docker_exec_safe "$WIKI_NAME" "sed -i 's/installdbuser=\${DB_USER}/installdbuser=\${DB_USER}/' /app/bin/run-installation.d/020-install-database"
+    docker_exec_safe "$WIKI_NAME" "sed -i 's/installdbpass=\${DB_PASS}/installdbpass=\${DB_PASS}/' /app/bin/run-installation.d/020-install-database"
     
-    # Make the patched script executable
-    docker exec "$container" chmod +x /app/bin/run-installation.d/020-install-database
-    log_info "Installer patched for network connections"
-    log_info "MediaWiki installer patched for network connection"
-    log_info "Database users configured during creation - no additional sync needed"    
-    log_info "BlueSpice initialization files created"
+    # this line may be malformed and broken
+    # docker_exec_safe "$container" 'bash -c "cat > /app/bin/run-installation.d/020-install-database << \"SOCKET_PATCH_EOF\""'
 }
 
-# Run BlueSpice installation - let it work as designed
+# USED
+# Run BlueSpice installation
 run_bluespice_install() {
-    local container="${CONTAINER_PREFIX}-wiki-web"
-    
     # Ensure /data directory is writable by bluespice user
-    docker exec --user root "$container" chown bluespice:bluespice /data
-    docker exec --user root "$container" chmod 755 /data
+    docker_exec_safe "$WIKI_NAME" "chown bluespice:bluespice /data"
+    docker_exec_safe "$WIKI_NAME" "chmod 755 /data"
     
     # Create dummy MySQL socket directory to satisfy PHP configuration
-    docker exec --user root "$container" mkdir -p /run/mysqld
-    docker exec --user root "$container" chmod 777 /run/mysqld
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /run/mysqld"
+    docker_exec_safe "$WIKI_NAME" "chmod 777 /run/mysqld"
     local admin_password
     admin_password=$(cat "${DATA_DIR}/${WIKI_NAME}/initialAdminPassword")
     
     # Verify the password file exists inside the container
-    if ! docker exec "$container" test -f /data/bluespice/initialAdminPassword; then
+    if ! docker_exec_safe "$WIKI_NAME" "test -f /data/bluespice/initialAdminPassword"; then
         log_info "Password file not found in container, creating it..."
-        docker exec "$container" bash -c "echo '$admin_password' > /data/bluespice/initialAdminPassword"
-        docker exec "$container" chown bluespice:bluespice /data/bluespice/initialAdminPassword
-        docker exec "$container" chmod 600 /data/bluespice/initialAdminPassword
+        docker_exec_safe "$WIKI_NAME" "bash -c \"echo '$admin_password' > /data/bluespice/initialAdminPassword\""
+        docker_exec_safe "$WIKI_NAME" "chown bluespice:bluespice /data/bluespice/initialAdminPassword"
+        docker_exec_safe "$WIKI_NAME" "chmod 600 /data/bluespice/initialAdminPassword"
     fi
     
     log_info "Running BlueSpice installation..."
@@ -529,86 +426,28 @@ run_bluespice_install() {
     log_info "BlueSpice installation completed"
 }
 
+# USED
 # Run maintenance script
 run_maintenance_script() {
-    local container="${CONTAINER_PREFIX}-wiki-web"
-    
-    # Ensure /data directory is writable by bluespice user
-    docker exec --user root "$container" chown bluespice:bluespice /data
-    docker exec --user root "$container" chmod 755 /data
-    
-    # Create dummy MySQL socket directory to satisfy PHP configuration
-    docker exec --user root "$container" mkdir -p /run/mysqld
-    docker exec --user root "$container" chmod 777 /run/mysqld
-    
     log_info "Running maintenance script..."
-    
-    docker exec "$container" /app/bin/run-maintenance update.php --quick --doshared
-    
-    log_info "Maintenance script completed"
-}
-
-
-# Retry search index build if it failed during installation
-retry_search_index_build() {
-    local container="${CONTAINER_PREFIX}-wiki-web"
-    
-    # Ensure /data directory is writable by bluespice user
-    docker exec --user root "$container" chown bluespice:bluespice /data
-    docker exec --user root "$container" chmod 755 /data
-    
-    # Create dummy MySQL socket directory to satisfy PHP configuration
-    docker exec --user root "$container" mkdir -p /run/mysqld
-    docker exec --user root "$container" chmod 777 /run/mysqld
-    
-    log_info "Verifying search index build..."
-    
-    # Check if we can access the database tables first
-    local table_check_result
-    table_check_result=$(docker exec "$container" php -r "
-        require_once '/app/bluespice/w/includes/WebStart.php';
-        try {
-            \$dbr = wfGetDB( DB_REPLICA );
-            \$result = \$dbr->tableExists('page');
-            echo \$result ? 'exists' : 'missing';
-        } catch (Exception \$e) {
-            echo 'error: ' . \$e->getMessage();
-        }
-    " 2>/dev/null || echo "error")
-    
-    if [[ "$table_check_result" == "exists" ]]; then
-        log_info "Database tables verified, attempting to rebuild search index..."
-        
-        # Try to rebuild the search index with proper error handling
-        if docker exec "$container" php /app/bluespice/w/extensions/BlueSpiceExtendedSearch/maintenance/rebuildIndex.php 2>/dev/null; then
-            log_info "Search index rebuild completed successfully"
-        else
-            log_info "Search index rebuild skipped or failed (this is non-critical for wiki functionality)"
-        fi
-    else
-        log_info "Database tables not fully ready, skipping search index rebuild"
-        log_info "Search index can be rebuilt later using maintenance scripts"
-    fi
+    docker_exec_safe "$WIKI_NAME" "/app/bin/run-maintenance update.php --quick --doshared"
 }
 
 # Main deployment function
 deploy_wiki() {
-    echo "BlueSpice Wiki Deployment"
-    echo "========================="
+    log_info "BlueSpice Wiki Deployment"
+    log_info "========================="
     
     load_environment
     
-    echo "Wiki Name: $WIKI_NAME"
-    echo "Domain: $WIKI_FQDN"
-    echo "Data Directory: $DATA_DIR"
-    echo "Container Prefix: $CONTAINER_PREFIX"
-    echo ""
+    log_info "Wiki Name: $WIKI_NAME"
+    log_info "Domain: $WIKI_FQDN"
+    log_info "Data Directory: $DATA_DIR"
+    log_info "Container Prefix: $CONTAINER_PREFIX"
+    log_info ""
     
     if [[ "$FRESH_INSTALL" == "true" ]]; then
         log_info "Performing fresh installation..."
-        
-        # Run prepare service to initialize data structure
-        log_info "Running prepare service to initialize data structure..."
         
         # Get docker compose files
         local compose_files=""
@@ -627,13 +466,12 @@ deploy_wiki() {
         # Stop task container temporarily to prevent database connection issues
         log_info "Stopping task container temporarily..."
         docker stop "${CONTAINER_PREFIX}-wiki-task" || true
-        
         sleep 10
         
         if wait_for_healthy "${CONTAINER_PREFIX}-wiki-web"; then
             # Create data directories and fix permissions after containers are running
             create_data_directories
-            fix_data_permissions
+            #fix_data_permissions
 
             # Run installation with correct environment
             test_database_connectivity
@@ -642,15 +480,14 @@ deploy_wiki() {
             create_bluespice_files
             run_bluespice_install
             run_maintenance_script
-            retry_search_index_build
-            
+                        
             # Now restart the task container
             log_info "Starting task container..."
             docker start "${CONTAINER_PREFIX}-wiki-task"
 
 
             # Ensure temp directory exists in task container as well
-            docker exec --user root "${CONTAINER_PREFIX}-wiki-task" sh -lc "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}" 2>/dev/null || true
+            docker_exec_safe "$WIKI_NAME" "sh -lc 'mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}'"
             
             log_info "Wiki deployment completed successfully!"
             echo ""
@@ -666,8 +503,8 @@ deploy_wiki() {
         docker compose -f docker-compose.main.yml -f docker-compose.helper-service.yml up -d
         
         # Ensure temp directory exists in web and task containers after start
-        docker exec --user root "${CONTAINER_PREFIX}-wiki-web" sh -lc "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}" 2>/dev/null || true
-        docker exec --user root "${CONTAINER_PREFIX}-wiki-task" sh -lc "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}" 2>/dev/null || true
+        docker_exec_safe "$WIKI_NAME" "sh -lc 'mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}'"
+        docker_exec_safe "$WIKI_NAME" "sh -lc 'mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}'"
 
         log_info "Wiki started successfully!"
     fi
