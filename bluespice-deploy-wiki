@@ -466,6 +466,36 @@ deploy_wiki() {
     fi
 }
 
+# Load environment for the specified wiki
+load_environment() {
+    local wiki_dir="/core/wikis/${WIKI_NAME}"
+    if [[ -f "$wiki_dir/.env" ]]; then
+        set -a
+        source "$wiki_dir/.env"
+        set +a
+        log_info "Environment loaded from $wiki_dir/.env"
+        
+        # Load shared environment for database credentials
+        if [[ -f "${SCRIPT_DIR}/shared/.shared.env" ]]; then
+            # Preserve wiki DATA_DIR before loading shared environment
+            WIKI_DATA_DIR="$DATA_DIR"
+            # shellcheck source=/dev/null
+            source "${SCRIPT_DIR}/shared/.shared.env"
+            # Restore wiki DATA_DIR after loading shared environment
+            DATA_DIR="$WIKI_DATA_DIR"
+        fi
+        
+        # Set default values for missing variables
+        WIKI_FQDN="${WIKI_HOST:-${VIRTUAL_HOST:-localhost}}"
+        DB_ROOT_USER="${DB_ROOT_USER:-root}"
+        WIKI_LANG="${WIKI_LANG:-en}"
+        
+    else
+        log_error "Environment file not found: $wiki_dir/.env"
+        exit 1
+    fi
+}
+
 # Main execution
 main() {
     if [[ $# -eq 0 ]]; then
@@ -475,6 +505,7 @@ main() {
     fi
     
     parse_arguments "$@"
+    load_environment
     deploy_wiki
 }
 
