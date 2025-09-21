@@ -46,12 +46,13 @@ download_extension() {
         return 0
     fi
     
+    log_warn "$primary_url failed"
     log_warn "  ⚠️ Primary download failed, trying fallback source..."
     
     # Try fallback URL
     if curl -L --fail --retry 3 --connect-timeout 10 \
        -o "$temp_dir/${extension_name}.tar.gz" "$fallback_url"; then
-        echo "  ✓ Downloaded $extension_name from fallback source"
+        log_info "  ✓ Downloaded $extension_name from fallback source"
         return 0
     fi
     
