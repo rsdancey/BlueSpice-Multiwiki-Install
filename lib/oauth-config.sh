@@ -172,18 +172,30 @@ install_auth_extensions() {
         echo "❌ Failed to copy PluggableAuth to container" >&2
         return 1
     fi
-    
+
     if ! docker_copy_to_container "$wiki_name" "$temp_dir/OpenIDConnect" "/app/bluespice/w/extensions/"; then
         echo "❌ Failed to copy OpenIDConnect to container" >&2
         return 1
     fi
-    
+
+    # Install OpenIDConnect PHP dependencies using Composer
+    echo "  📦 Installing OpenIDConnect PHP dependencies..."
+    if docker_exec_safe "$wiki_name" bash -c "cd /app/bluespice/w/extensions/OpenIDConnect && composer install --no-dev --optimize-autoloader" 2>/dev/null; then
+        echo "  ✓ OpenIDConnect dependencies installed successfully"
+    else
+        echo "  ⚠️ Failed to install Composer dependencies, trying manual installation..."
+        # Fallback: manually install the required library
+        if docker_exec_safe "$wiki_name" bash -c "cd /app/bluespice/w/extensions/OpenIDConnect && mkdir -p vendor/jumbojett && cd vendor/jumbojett && curl -L https://github.com/jumbojett/OpenID-Connect-PHP/archive/refs/heads/master.tar.gz | tar -xz && mv OpenID-Connect-PHP-master openid-connect-php" 2>/dev/null; then
+            echo "  ✓ Manually installed OpenIDConnect PHP library"
+        else
+            echo "  ⚠️ Could not install OpenIDConnect dependencies - OAuth may not work properly"
+        fi
+    fi
+
     # Set permissions in container
     echo "  🔐 Setting permissions..."
     docker_exec_safe "$wiki_name" chmod -R 755 /app/bluespice/w/extensions/PluggableAuth 2>/dev/null || true
-    docker_exec_safe "$wiki_name" chmod -R 755 /app/bluespice/w/extensions/OpenIDConnect 2>/dev/null || true
-    
-    # Verify installation
+    docker_exec_safe "$wiki_name" chmod -R 755 /app/bluespice/w/extensions/OpenIDConnect 2>/dev/null || true    # Verify installation
     echo "  ✅ Verifying installation..."
     if ! docker_exec_safe "$wiki_name" test -f /app/bluespice/w/extensions/PluggableAuth/extension.json || \
        ! docker_exec_safe "$wiki_name" test -f /app/bluespice/w/extensions/OpenIDConnect/extension.json; then
