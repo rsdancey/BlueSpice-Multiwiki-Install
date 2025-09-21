@@ -370,6 +370,12 @@ copy_config_files_to_container() {
     if [[ -f "$pre_init_file" ]]; then
         if docker cp "$pre_init_file" "${container_name}:/data/bluespice/pre-init-settings.php"; then
             log_info "✓ Copied pre-init-settings.php to container"
+            # Fix ownership inside container
+            if docker exec "$container_name" chown 1000:1000 /data/bluespice/pre-init-settings.php 2>/dev/null; then
+                log_info "✓ Fixed ownership of pre-init-settings.php in container"
+            else
+                log_warn "Could not fix ownership of pre-init-settings.php in container"
+            fi
         else
             log_warn "Failed to copy pre-init-settings.php to container"
             copy_success=false
@@ -383,6 +389,12 @@ copy_config_files_to_container() {
     if [[ -f "$post_init_file" ]]; then
         if docker cp "$post_init_file" "${container_name}:/data/bluespice/post-init-settings.php"; then
             log_info "✓ Copied post-init-settings.php to container"
+            # Fix ownership inside container
+            if docker exec "$container_name" chown 1000:1000 /data/bluespice/post-init-settings.php 2>/dev/null; then
+                log_info "✓ Fixed ownership of post-init-settings.php in container"
+            else
+                log_warn "Could not fix ownership of post-init-settings.php in container"
+            fi
         else
             log_warn "Failed to copy post-init-settings.php to container"
             copy_success=false
@@ -403,7 +415,6 @@ copy_config_files_to_container() {
 setup_interactive_oauth_config() {
     local wiki_name="$1"
     local wiki_domain="$2"
-    local container_post_init_file="/data/bluespice/post-init-settings.php"
     local container_name="bluespice-${wiki_name}-wiki-web"
     
     echo ""
