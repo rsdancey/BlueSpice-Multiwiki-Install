@@ -59,19 +59,19 @@ is_container_running() {
 # Execute command in container with error checking
 docker_exec_safe() {
     local wiki_name="$1"
-    shift
+    local remote_command="$2"
     local container_name
     container_name=$(get_container_name "$wiki_name")
     
     if ! is_container_running "$wiki_name"; then
-        echo "❌ Container $container_name is not running" >&2
+        log_error "❌ Container $container_name is not running" >&2
         return 1
     fi
     
-    if ! docker exec --user root "$container_name" "$@"; then
-        echo "❌ Docker exec failed!" >&2
-        echo "   Container: $container_name" >&2
-        echo "   Command: $*" >&2
+    if ! docker exec --user root "$container_name" "$remote_command"; then
+        log_error "❌ Docker exec failed!"
+        log_error "   Container: $container_name"
+        log_error "   Command: $remote_command"
         return 1
     fi
 }
@@ -85,12 +85,12 @@ docker_copy_to_container() {
     container_name=$(get_container_name "$wiki_name")
     
     if ! is_container_running "$wiki_name"; then
-        echo "❌ Container $container_name is not running" >&2
+        log_error "❌ Container $container_name is not running" >&2
         return 1
     fi
     
     if [[ ! -e "$source_path" ]]; then
-        echo "❌ Source path does not exist: $source_path" >&2
+        log_error "❌ Source path does not exist: $source_path" >&2
         return 1
     fi
     
@@ -105,9 +105,15 @@ docker_set_ownership() {
     container_name=$(get_container_name "$wiki_name")
     
     if ! is_container_running "$wiki_name"; then
-        echo "❌ Container $container_name is not running" >&2
+        log_error "❌ Container $container_name is not running" >&2
         return 1
     fi
     
-    docker exec --user root "$container_name" chown bluespice:bluespice "$object_to_change"
+    if ! docker exec --user root "$container_name" chown bluespice:bluespice "$object_to_change"; then
+        log_error "❌ Docker exec failed!"
+        log_error "   Container: $container_name"
+        log_error "   Command: chown bluespice:bluespice $object_to_change"
+        return 1
+    fi
+
 }
