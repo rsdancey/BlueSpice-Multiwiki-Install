@@ -224,7 +224,7 @@ install_auth_extensions() {
 setup_oauth_extensions() {
     local wiki_name="$1"
     local wiki_dir="$2"
-    local post_init_file="$2"
+    local wiki_domain="$3"
     
     log_info "🚀 Starting OAuth extension setup for $wiki_name..."
     
@@ -243,7 +243,7 @@ setup_oauth_extensions() {
         fi
         
         # Configure OAuth settings
-        if ! setup_interactive_oauth_config "$wiki_name"; then
+        if ! setup_interactive_oauth_config "$wiki_name" "$wiki_domain"; then
             log_error "❌ Failed to configure OAuth settings"
             return 1
         fi
