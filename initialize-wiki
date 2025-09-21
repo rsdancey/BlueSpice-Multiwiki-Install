@@ -221,22 +221,6 @@ check_and_prompt_email_config() {
     fi
 }
 
-# Email configuration file creation (now using init-settings-config library)
-create_email_config_files() {
-    local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
-    
-    log_info "Creating BlueSpice configuration files..."
-    
-    # Use the new MediaWiki configuration library
-    if ! create-init-settings-config-files "$wiki_dir" "$WIKI_NAME"; then
-        log_error "Failed to create BlueSpice configuration files"
-        return 1
-    fi
-    
-    log_info "BlueSpice configuration files created successfully"
-    return 0
-}
-
 # Wiki directory setup
 setup_wiki_directory() {
     local wiki_dir="${WIKIS_DIR}/${WIKI_NAME}"
@@ -665,8 +649,8 @@ main() {
             exit $exit_code
         fi
         
-        if ! create_email_config_files; then
-            log_error "Failed to create email configuration files"
+        if ! create-init-settings-config-files "${WIKIS_DIR}/${WIKI_NAME}" "$WIKI_NAME"; then
+            log_error "Failed to create init-settings files"
             local exit_code=1
             echo "Main function returning with exit code: $exit_code"
             exit $exit_code
