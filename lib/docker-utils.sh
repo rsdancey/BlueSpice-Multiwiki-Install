@@ -109,7 +109,7 @@ docker_set_ownership() {
         return 1
     fi
     
-    if ! docker exec --user root "$container_name" chown bluespice:bluespice "$object_to_change"; then
+    if ! docker exec --user root "$container_name" chown -R bluespice:bluespice "$object_to_change"; then
         log_error "❌ Docker exec failed!"
         log_error "   Container: $container_name"
         log_error "   Command: chown bluespice:bluespice $object_to_change"
