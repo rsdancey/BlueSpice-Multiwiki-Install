@@ -68,7 +68,7 @@ docker_exec_safe() {
         return 1
     fi
     
-    docker exec --user bluespice "$container_name" "$@"
+    docker exec --user root "$container_name" "$@"
 }
 
 # Copy file to container with error checking
@@ -90,5 +90,5 @@ docker_copy_to_container() {
     fi
     
     docker cp "$source_path" "$container_name:$dest_path"
-    docker exec --user bluespice "$container_name" chown bluespice:bluespice "$container_name:$dest_path"
+    docker exec --user root "$container_name" chown bluespice:bluespice "$container_name:$dest_path"
 }
