@@ -181,20 +181,25 @@ install_auth_extensions() {
     # Install Composer in the container if not already present
     echo "  📦 Installing Composer in container..."
     if ! docker_exec_safe "$wiki_name" test -f /app/bluespice/w/composer.phar 2>/dev/null; then
-        echo "  📥 Downloading and installing Composer..."
+        echo "  📥 Downloading and installing Composer using official method..."
         if docker_exec_safe "$wiki_name" bash -c "
             cd /app/bluespice/w &&
-            curl -sS https://getcomposer.org/installer | php -- --filename=composer.phar &&
-            chmod +x composer.phar &&
+            php -r \"copy('https://getcomposer.org/installer', 'composer-setup.php');\" &&
+            php -r \"if (hash_file('sha384', 'composer-setup.php') === 'ed0feb545ba87161262f2d45a633e34f591ebb3381f2e0063c345ebea4d228dd0043083717770234ec00c5a9f9593792') { echo 'Installer verified'.PHP_EOL; } else { echo 'Installer corrupt'.PHP_EOL; unlink('composer-setup.php'); exit(1); }\" &&
+            php composer-setup.php &&
+            php -r \"unlink('composer-setup.php');\" &&
             ls -la composer.phar
         " 2>/dev/null; then
             echo "  ✓ Composer installed successfully at /app/bluespice/w/composer.phar"
         else
-            echo "  ❌ Failed to install Composer - trying alternative location..."
-            # Try installing in /usr/local/bin
+            echo "  ❌ Failed to install Composer using official method - trying alternative..."
+            # Try installing in /usr/local/bin as fallback
             if docker_exec_safe "$wiki_name" bash -c "
-                curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer &&
-                chmod +x /usr/local/bin/composer &&
+                cd /tmp &&
+                php -r \"copy('https://getcomposer.org/installer', 'composer-setup.php');\" &&
+                php -r \"if (hash_file('sha384', 'composer-setup.php') === 'ed0feb545ba87161262f2d45a633e34f591ebb3381f2e0063c345ebea4d228dd0043083717770234ec00c5a9f9593792') { echo 'Installer verified'.PHP_EOL; } else { echo 'Installer corrupt'.PHP_EOL; unlink('composer-setup.php'); exit(1); }\" &&
+                php composer-setup.php --install-dir=/usr/local/bin --filename=composer &&
+                php -r \"unlink('composer-setup.php');\" &&
                 ln -sf /usr/local/bin/composer /app/bluespice/w/composer.phar
             " 2>/dev/null; then
                 echo "  ✓ Composer installed in /usr/local/bin and linked to /app/bluespice/w/"
