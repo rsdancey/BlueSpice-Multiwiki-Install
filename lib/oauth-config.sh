@@ -199,14 +199,19 @@ install_auth_extensions() {
     fi
 
     if ! docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/OpenIDConnect"; then
-        log_error "❌ Failed to set ownership for PluggableAuth in container"
+        log_error "❌ Failed to set ownership for OpenIDConnect in container"
         return 1
     fi
 
     echo "  ✅ Verifying installation..."
-    if ! docker_exec_safe "$wiki_name" test -f /app/bluespice/w/extensions/PluggableAuth/extension.json || \
-       ! docker_exec_safe "$wiki_name" test -f /app/bluespice/w/extensions/OpenIDConnect/extension.json; then
-        log_error "❌ Extension installation verification failed" >&2
+    # Check if both extension.json files exist
+    if ! docker_exec_safe "$wiki_name" "test -f /app/bluespice/w/extensions/PluggableAuth/extension.json"; then
+        log_error "❌ PluggableAuth extension.json not found"
+        return 1
+    fi
+    
+    if ! docker_exec_safe "$wiki_name" "test -f /app/bluespice/w/extensions/OpenIDConnect/extension.json"; then
+        log_error "❌ OpenIDConnect extension.json not found"
         return 1
     fi
 
