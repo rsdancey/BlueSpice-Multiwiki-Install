@@ -176,11 +176,19 @@ install_auth_extensions() {
     if ! docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/PluggableAuth"; then
         echo "❌ Failed to set ownership for PluggableAuth in container" >&2
         return 1
+    fi
 
     if ! docker_copy_to_container "$wiki_name" "$temp_dir/OpenIDConnect" "/app/bluespice/w/extensions/"; then
         echo "❌ Failed to copy OpenIDConnect to container" >&2
         return 1
     fi
+
+    if ! docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/OpenIDConnect"; then
+        echo "❌ Failed to set ownership for OpenIDConnect in container" >&2
+        return 1
+    fi
+
+
 
     # Install Composer in the container if not already present
     echo "  📦 Installing Composer in container..."
