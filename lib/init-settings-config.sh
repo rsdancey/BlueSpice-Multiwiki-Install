@@ -207,7 +207,9 @@ add_google_oauth_config() {
         "clientID" => "${oauth_client_id}",
         "clientSecret" => "${oauth_client_secret}",
         "scope" => ["openid", "email", "profile"],
-        "email_key" => "email"
+        "email_key" => "email",
+        "username_key" => "email",
+        "realname_key" => "name"
     ],
     "buttonLabelMessage" => "Login with Google"
 ];
@@ -220,10 +222,15 @@ add_google_oauth_config() {
 \$wgPluggableAuth_EmailMatchingOnly = ${email_matching_only};
 \$wgPluggableAuth_CreateIfDoesNotExist = ${create_if_not_exist};
 
-# OpenIDConnect settings for email matching
+# OpenIDConnect specific settings for proper user mapping
 \$wgOpenIDConnect_UseEmailNameAsUserName = false;
-\$wgOpenIDConnect_MigrateUsersByEmail = ${email_matching_only};
+\$wgOpenIDConnect_MigrateUsersByEmail = true;
 \$wgOpenIDConnect_UseRealNameAsUserName = false;
+\$wgOpenIDConnect_ForceLogout = false;
+
+# Additional debugging settings (can be removed later)
+\$wgDebugLogGroups['OpenIDConnect'] = "/tmp/oidc-debug.log";
+\$wgDebugLogGroups['PluggableAuth'] = "/tmp/pluggableauth-debug.log";
 OAUTH_CONFIG_EOF
     
     return 0
