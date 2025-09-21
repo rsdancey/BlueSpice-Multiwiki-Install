@@ -90,5 +90,19 @@ docker_copy_to_container() {
     fi
     
     docker cp "$source_path" "$container_name:$dest_path"
-    docker exec --user root "$container_name" chown bluespice:bluespice "$container_name:$dest_path"
+}
+
+# Set ownership of file
+docker_set_ownership() {
+    local wiki_name="$1"
+    local object_to_change="$2"
+    local container_name
+    container_name=$(get_container_name "$wiki_name")
+    
+    if ! is_container_running "$wiki_name"; then
+        echo "❌ Container $container_name is not running" >&2
+        return 1
+    fi
+    
+    docker exec --user root "$container_name" chown bluespice:bluespice "$object_to_change"
 }
