@@ -184,9 +184,29 @@ install_auth_extensions() {
         echo "  ✓ OpenIDConnect dependencies installed successfully"
     else
         echo "  ⚠️ Failed to install Composer dependencies, trying manual installation..."
-        # Fallback: manually install the required library
-        if docker_exec_safe "$wiki_name" bash -c "cd /app/bluespice/w/extensions/OpenIDConnect && mkdir -p vendor/jumbojett && cd vendor/jumbojett && curl -L https://github.com/jumbojett/OpenID-Connect-PHP/archive/refs/heads/master.tar.gz | tar -xz && mv OpenID-Connect-PHP-master openid-connect-php" 2>/dev/null; then
-            echo "  ✓ Manually installed OpenIDConnect PHP library"
+        # Fallback: manually install the required library with proper autoloader
+        if docker_exec_safe "$wiki_name" bash -c "
+cd /app/bluespice/w/extensions/OpenIDConnect
+mkdir -p vendor/jumbojett
+cd vendor/jumbojett
+curl -L https://github.com/jumbojett/OpenID-Connect-PHP/archive/refs/heads/master.tar.gz | tar -xz
+mv OpenID-Connect-PHP-master openid-connect-php
+cd ..
+# Create autoload.php
+cat > autoload.php << 'EOF'
+<?php
+require_once __DIR__ . '/jumbojett/openid-connect-php/src/OpenIDConnectClient.php';
+EOF
+# Create composer.json for reference
+cat > ../composer.json << 'EOF'
+{
+    \"require\": {
+        \"jumbojett/openid-connect-php\": \"*\"
+    }
+}
+EOF
+" 2>/dev/null; then
+            echo "  ✓ Manually installed OpenIDConnect PHP library with autoloader"
         else
             echo "  ⚠️ Could not install OpenIDConnect dependencies - OAuth may not work properly"
         fi
