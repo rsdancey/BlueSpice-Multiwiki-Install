@@ -25,14 +25,20 @@ wait_for_container_ready() {
     while [[ $attempt -le $max_attempts ]]; do
         # Check if container exists and is running
         if docker ps --filter name="$container_name" --format "{{.Names}}" | grep -q "^${container_name}$"; then
-            # Check if container is healthy (if health check is configured)
+            # Use Docker's health check status
             local health_status
             health_status=$(docker inspect --format='{{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "none")
             
-            if [[ "$health_status" == "healthy" ]] || [[ "$health_status" == "none" ]]; then
-                # Additional check: ensure container can execute commands
-                if docker exec "$container_name" test -f /data/bluespice/post-init-settings.php 2>/dev/null; then
-                    echo "✓ Container $container_name is ready and operational"
+            # If container has health check configured, wait for it to be healthy
+            if [[ "$health_status" == "healthy" ]]; then
+                echo "✓ Container $container_name is healthy and ready"
+                return 0
+            elif [[ "$health_status" == "none" ]]; then
+                # No health check configured, check if container is in running state
+                local container_state
+                container_state=$(docker inspect --format='{{.State.Status}}' "$container_name" 2>/dev/null || echo "unknown")
+                if [[ "$container_state" == "running" ]]; then
+                    echo "✓ Container $container_name is running and ready"
                     return 0
                 fi
             fi
