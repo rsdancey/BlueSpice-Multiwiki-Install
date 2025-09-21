@@ -675,7 +675,10 @@ main() {
     # Copy configuration files to the running container
     log_info "Copying configuration files to container..."
     if ! copy_config_files_to_container "$WIKI_NAME" "${WIKIS_DIR}/${WIKI_NAME}"; then
-        log_warn "Failed to copy configuration files to container - they may need to be copied manually"
+        log_error "Writing configuration files to container failed"
+        local exit_code=1
+        echo "Main function returning with exit code: $exit_code"
+        exit $exit_code
     fi
     
     # Handle backup restoration if selected
