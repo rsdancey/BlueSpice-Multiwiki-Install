@@ -126,22 +126,22 @@ HELP
 }
 
 load_environment() {
-    if [[ -f "/core/wikis/${WIKI_NAME}/.env" ]]; then
+    local wiki_dir="$1"
+    if [[ -f "$wiki_dir/.env" ]]; then
         set -a
-        # shellcheck source=/dev/null
-        source "/core/wikis/${WIKI_NAME}/.env"
+        source "$wiki_dir/.env"
         set +a
-        log_info "Environment loaded from /core/wikis/${WIKI_NAME}/.env"
+        log_info "Environment loaded from $wiki_dir/.env"
         
         # Load shared environment for database credentials
         if [[ -f "${SCRIPT_DIR}/shared/.shared.env" ]]; then
             # shellcheck source=/dev/null
-        # Preserve wiki DATA_DIR before loading shared environment
-        WIKI_DATA_DIR="$DATA_DIR"
+            # Preserve wiki DATA_DIR before loading shared environment
+            WIKI_DATA_DIR="$DATA_DIR"
             # shellcheck source=/dev/null
             source "${SCRIPT_DIR}/shared/.shared.env"
-        # Restore wiki DATA_DIR after loading shared environment
-        DATA_DIR="$WIKI_DATA_DIR"
+            # Restore wiki DATA_DIR after loading shared environment
+            DATA_DIR="$WIKI_DATA_DIR"
         fi
         
         # Set default values for missing variables
@@ -150,7 +150,7 @@ load_environment() {
         WIKI_LANG="${WIKI_LANG:-en}"
         
     else
-        log_error "Environment file not found: /core/wikis/${WIKI_NAME}/.env"
+        log_error "Environment file not found: $wiki_dir/.env"
         exit 1
     fi
 }
@@ -439,17 +439,6 @@ run_maintenance_script() {
 
 # Main deployment function
 deploy_wiki() {
-    log_info "BlueSpice Wiki Deployment"
-    log_info "========================="
-    
-    load_environment
-    
-    log_info "Wiki Name: $WIKI_NAME"
-    log_info "Domain: $WIKI_FQDN"
-    log_info "Data Directory: $DATA_DIR"
-    log_info "Container Prefix: $CONTAINER_PREFIX"
-    log_info ""
-    
     if [[ "$FRESH_INSTALL" == "true" ]]; then
         log_info "Performing fresh installation..."
         
@@ -488,7 +477,6 @@ deploy_wiki() {
             # Now restart the task container
             log_info "Starting task container..."
             docker start "${CONTAINER_PREFIX}-wiki-task"
-
 
             # Ensure temp directory exists in task container as well
             docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}"

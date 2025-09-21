@@ -620,17 +620,13 @@ main() {
     # Validate all configuration
     if ! validate_configuration; then
         log_error "Configuration validation failed"
-        local exit_code=1
-        echo "Main function returning with exit code: $exit_code"
-        exit $exit_code
+        return 1
     fi
     
     # Show configuration summary and get confirmation
     if ! confirm_configuration; then
         log_info "Setup cancelled by user"
-        local exit_code=0
-        echo "Main function returning with exit code: $exit_code"
-        exit $exit_code
+        exit
     fi
     
     echo
@@ -640,44 +636,36 @@ main() {
     if [[ "$SKIP_DIRECTORY_SETUP" != "true" ]]; then
         if ! setup_wiki_directory; then
             log_error "Failed to setup wiki directory"
-            local exit_code=1
-            echo "Main function returning with exit code: $exit_code"
-            exit $exit_code
+            return 1
         fi
         
         if ! create_environment_file; then
             log_error "Failed to create environment file"
-            local exit_code=1
-            echo "Main function returning with exit code: $exit_code"
-            exit $exit_code
+            return 1
         fi
     else
         log_info "Using existing directory - skipping directory and environment setup"
     fi
-        
+
+    load_environment "${WIKIS_DIR}/${WIKI_NAME}"
+
     # create the init-settings files
     if ! create-init-settings-config-files "${WIKIS_DIR}/${WIKI_NAME}" "$WIKI_NAME"; then
         log_error "Failed to create init-settings files"
-        local exit_code=1
-        echo "Main function returning with exit code: $exit_code"
-        exit $exit_code
+        exit 1
     fi
     
-    # Deploy wiki with OAuth extensions
+    # Deploy wiki
     if ! deploy_wiki_instance; then
         log_error "Wiki deployment failed"
-        local exit_code=1
-        echo "Main function returning with exit code: $exit_code"
-        exit $exit_code
+        exit 1
     fi
     
     # Copy configuration files to the running container
     log_info "Copying configuration files to container..."
     if ! copy_config_files_to_container "$WIKI_NAME" "${WIKIS_DIR}/${WIKI_NAME}"; then
         log_error "Writing configuration files to container failed"
-        local exit_code=1
-        echo "Main function returning with exit code: $exit_code"
-        exit $exit_code
+        exit 1
     fi
     
     # Handle backup restoration if selected
