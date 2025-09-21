@@ -12,6 +12,20 @@ create_pre_init_settings() {
     local pre_init_file="${wiki_dir}/pre-init-settings.php"
     
     log_info "Creating pre-init-settings.php with email permissions..."
+    log_info "Wiki dir: $wiki_dir"
+    log_info "Pre-init file path: $pre_init_file"
+    
+    # Check if directory exists
+    if [[ ! -d "$wiki_dir" ]]; then
+        log_error "Wiki directory does not exist: $wiki_dir"
+        return 1
+    fi
+    
+    # Check if we can write to the directory
+    if [[ ! -w "$wiki_dir" ]]; then
+        log_error "No write permission to wiki directory: $wiki_dir"
+        return 1
+    fi
     
     cat > "$pre_init_file" << PREINIT_EOF
 <?php
@@ -24,7 +38,20 @@ create_pre_init_settings() {
 \$GLOBALS['mwsgRunJobsTriggerRunnerWorkingDir'] = '/tmp/${wiki_name}';
 PREINIT_EOF
     
-    log_info "Created pre-init-settings.php"
+    # Check if file was created successfully
+    if [[ ! -f "$pre_init_file" ]]; then
+        log_error "Failed to create pre-init-settings.php file"
+        return 1
+    fi
+    
+    # Check if file has content
+    if [[ ! -s "$pre_init_file" ]]; then
+        log_error "pre-init-settings.php file was created but is empty"
+        return 1
+    fi
+    
+    log_info "Created pre-init-settings.php successfully"
+    log_info "File size: $(wc -c < "$pre_init_file") bytes"
     return 0
 }
 
@@ -258,7 +285,7 @@ OAUTH_PLACEHOLDER_EOF
 }
 
 # Main function to create complete MediaWiki configuration files
-create_init-settings-config-files() {
+create-init-settings-config-files() {
     local wiki_dir="$1"
     local wiki_name="$2"
     local env_file="${wiki_dir}/.env"

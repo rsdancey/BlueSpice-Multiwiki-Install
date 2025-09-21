@@ -228,7 +228,7 @@ create_email_config_files() {
     log_info "Creating BlueSpice configuration files..."
     
     # Use the new MediaWiki configuration library
-    if ! create_init-settings-config-files "$wiki_dir" "$WIKI_NAME"; then
+    if ! create-init-settings-config-files "$wiki_dir" "$WIKI_NAME"; then
         log_error "Failed to create BlueSpice configuration files"
         return 1
     fi
