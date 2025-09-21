@@ -352,7 +352,50 @@ create-init-settings-config-files() {
     fi
     
     log_info "MediaWiki configuration files created successfully"
+    
+    # Copy configuration files to container if it's running
+    copy_config_files_to_container "$wiki_name" "$wiki_dir"
+    
     return 0
+}
+
+# Copy configuration files to running container
+copy_config_files_to_container() {
+    local wiki_name="$1"
+    local wiki_dir="$2"
+    local container_name="bluespice-${wiki_name}-wiki-web"
+    local pre_init_file="${wiki_dir}/pre-init-settings.php"
+    local post_init_file="${wiki_dir}/post-init-settings.php"
+    
+    # Check if container is running
+    if ! docker ps --format "table {{.Names}}" | grep -q "^${container_name}$"; then
+        log_info "Container ${container_name} is not running - files will be copied when container starts via volume mount"
+        return 0
+    fi
+    
+    log_info "Copying configuration files to running container..."
+    
+    # Copy pre-init-settings.php
+    if [[ -f "$pre_init_file" ]]; then
+        if docker cp "$pre_init_file" "${container_name}:/data/bluespice/pre-init-settings.php"; then
+            log_info "✓ Copied pre-init-settings.php to container"
+        else
+            log_warn "Failed to copy pre-init-settings.php to container"
+        fi
+    else
+        log_warn "pre-init-settings.php not found at $pre_init_file"
+    fi
+    
+    # Copy post-init-settings.php
+    if [[ -f "$post_init_file" ]]; then
+        if docker cp "$post_init_file" "${container_name}:/data/bluespice/post-init-settings.php"; then
+            log_info "✓ Copied post-init-settings.php to container"
+        else
+            log_warn "Failed to copy post-init-settings.php to container"
+        fi
+    else
+        log_warn "post-init-settings.php not found at $post_init_file"
+    fi
 }
 
 # Interactive OAuth configuration setup
@@ -380,7 +423,7 @@ setup_interactive_oauth_config() {
     
     if [[ "${configure_oauth,,}" == "y" ]]; then
         # Get OAuth credentials
-        printf "Enter Google OAuth Client ID"
+        printf "Enter Google OAuth Client ID: "
         read -r oauth_client_id
         
         while [[ -z "$oauth_client_id" ]]; do
