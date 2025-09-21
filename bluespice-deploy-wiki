@@ -125,36 +125,6 @@ For more information, see the BlueSpice documentation or contact support.
 HELP
 }
 
-load_environment() {
-    local wiki_dir="$1"
-    if [[ -f "$wiki_dir/.env" ]]; then
-        set -a
-        source "$wiki_dir/.env"
-        set +a
-        log_info "Environment loaded from $wiki_dir/.env"
-        
-        # Load shared environment for database credentials
-        if [[ -f "${SCRIPT_DIR}/shared/.shared.env" ]]; then
-            # shellcheck source=/dev/null
-            # Preserve wiki DATA_DIR before loading shared environment
-            WIKI_DATA_DIR="$DATA_DIR"
-            # shellcheck source=/dev/null
-            source "${SCRIPT_DIR}/shared/.shared.env"
-            # Restore wiki DATA_DIR after loading shared environment
-            DATA_DIR="$WIKI_DATA_DIR"
-        fi
-        
-        # Set default values for missing variables
-        WIKI_FQDN="${WIKI_HOST:-${VIRTUAL_HOST:-localhost}}"
-        DB_ROOT_USER="${DB_ROOT_USER:-root}"
-        WIKI_LANG="${WIKI_LANG:-en}"
-        
-    else
-        log_error "Environment file not found: $wiki_dir/.env"
-        exit 1
-    fi
-}
-
 # Parse command line arguments
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
