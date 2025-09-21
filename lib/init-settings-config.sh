@@ -352,10 +352,6 @@ create-init-settings-config-files() {
     fi
     
     log_info "MediaWiki configuration files created successfully"
-    
-    # Copy configuration files to container if it's running
-    copy_config_files_to_container "$wiki_name" "$wiki_dir"
-    
     return 0
 }
 
@@ -366,6 +362,7 @@ copy_config_files_to_container() {
     local container_name="bluespice-${wiki_name}-wiki-web"
     local pre_init_file="${wiki_dir}/pre-init-settings.php"
     local post_init_file="${wiki_dir}/post-init-settings.php"
+    local copy_success=true
     
     # Check if container is running
     if ! docker ps --format "table {{.Names}}" | grep -q "^${container_name}$"; then
@@ -381,9 +378,11 @@ copy_config_files_to_container() {
             log_info "✓ Copied pre-init-settings.php to container"
         else
             log_warn "Failed to copy pre-init-settings.php to container"
+            copy_success=false
         fi
     else
         log_warn "pre-init-settings.php not found at $pre_init_file"
+        copy_success=false
     fi
     
     # Copy post-init-settings.php
@@ -392,9 +391,17 @@ copy_config_files_to_container() {
             log_info "✓ Copied post-init-settings.php to container"
         else
             log_warn "Failed to copy post-init-settings.php to container"
+            copy_success=false
         fi
     else
         log_warn "post-init-settings.php not found at $post_init_file"
+        copy_success=false
+    fi
+    
+    if [[ "$copy_success" == "true" ]]; then
+        return 0
+    else
+        return 1
     fi
 }
 
