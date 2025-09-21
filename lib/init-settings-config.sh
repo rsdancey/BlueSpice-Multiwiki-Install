@@ -207,8 +207,7 @@ add_google_oauth_config() {
         "clientID" => "${oauth_client_id}",
         "clientSecret" => "${oauth_client_secret}",
         "scope" => ["openid", "email", "profile"],
-        "email_key" => "email",
-        "use_email_mapping" => true
+        "email_key" => "email"
     ],
     "buttonLabelMessage" => "Login with Google"
 ];
@@ -221,12 +220,9 @@ add_google_oauth_config() {
 \$wgPluggableAuth_EmailMatchingOnly = ${email_matching_only};
 \$wgPluggableAuth_CreateIfDoesNotExist = ${create_if_not_exist};
 
-# Explicitly prevent automatic user creation if not enabled
-\$wgGroupPermissions["*"]["autocreateaccount"] = ${create_if_not_exist};
-
-# Additional OpenIDConnect settings
+# OpenIDConnect settings for email matching
 \$wgOpenIDConnect_UseEmailNameAsUserName = false;
-\$wgOpenIDConnect_MigrateUsersByEmail = true;
+\$wgOpenIDConnect_MigrateUsersByEmail = ${email_matching_only};
 \$wgOpenIDConnect_UseRealNameAsUserName = false;
 OAUTH_CONFIG_EOF
     
@@ -405,15 +401,15 @@ setup_interactive_oauth_config() {
         done
             
         # Ask about account creation settings
-        printf "Allow automatic account creation for Google users? [y/N]: "
+        printf "Allow automatic account creation for Google users? [Y/n]: "
         read -r allow_autocreate
             
-        local create_if_not_exist="false"
-        local email_matching_only="true"
+        local create_if_not_exist="true"
+        local email_matching_only="false"
             
-        if [[ "${allow_autocreate,,}" == "y" ]]; then
-            create_if_not_exist="true"
-            email_matching_only="false"
+        if [[ "${allow_autocreate,,}" == "n" ]]; then
+            create_if_not_exist="false"
+            email_matching_only="true"
         fi
             
         # Add Google OAuth configuration using the centralized function
