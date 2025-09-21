@@ -368,18 +368,13 @@ copy_config_files_to_container() {
     
     # Create pre-init-settings.php in container with correct ownership
     if [[ -f "$pre_init_file" ]]; then
-        log_info "Creating pre-init-settings.php in container with 1000:1000 ownership..."
-        # Create file in temp location with correct ownership
-        if docker exec --user bluespice:bluespice "$container_name" bash -c "cat > /tmp/pre-init-settings.php" < "$pre_init_file"; then
-            # Copy from temp location to final location (preserves ownership)
-            if docker exec "$container_name" cp /tmp/pre-init-settings.php /data/bluespice/pre-init-settings.php; then
-                # Clean up temp file
-                docker exec "$container_name" rm -f /tmp/pre-init-settings.php
-                log_info "✓ Created pre-init-settings.php in container with correct ownership"
-            else
-                log_error "Failed to copy pre-init-settings.php to final location"
-                copy_success=false
-            fi
+        log_info "Creating pre-init-settings.php in container with bluespice ownership..."
+        # Read file content into variable
+        local pre_init_content
+        pre_init_content=$(cat "$pre_init_file")
+        # Create file using printf to pass content directly
+        if docker exec --user bluespice:bluespice "$container_name" bash -c "printf '%s' \"\$0\" > /data/bluespice/pre-init-settings.php" "$pre_init_content"; then
+            log_info "✓ Created pre-init-settings.php in container with bluespice ownership"
         else
             log_error "Failed to create pre-init-settings.php in container"
             copy_success=false
@@ -391,18 +386,13 @@ copy_config_files_to_container() {
     
     # Create post-init-settings.php in container with correct ownership
     if [[ -f "$post_init_file" ]]; then
-        log_info "Creating post-init-settings.php in container with 1000:1000 ownership..."
-        # Create file in temp location with correct ownership
-        if docker exec --user bluespice:bluespice "$container_name" bash -c "cat > /tmp/post-init-settings.php" < "$post_init_file"; then
-            # Copy from temp location to final location (preserves ownership)
-            if docker exec "$container_name" cp /tmp/post-init-settings.php /data/bluespice/post-init-settings.php; then
-                # Clean up temp file
-                docker exec "$container_name" rm -f /tmp/post-init-settings.php
-                log_info "✓ Created post-init-settings.php in container with correct ownership"
-            else
-                log_error "Failed to copy post-init-settings.php to final location"
-                copy_success=false
-            fi
+        log_info "Creating post-init-settings.php in container with bluespice ownership..."
+        # Read file content into variable
+        local post_init_content
+        post_init_content=$(cat "$post_init_file")
+        # Create file using printf to pass content directly
+        if docker exec --user bluespice:bluespice "$container_name" bash -c "printf '%s' \"\$0\" > /data/bluespice/post-init-settings.php" "$post_init_content"; then
+            log_info "✓ Created post-init-settings.php in container with bluespice ownership"
         else
             log_error "Failed to create post-init-settings.php in container"
             copy_success=false
