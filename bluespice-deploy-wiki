@@ -419,12 +419,13 @@ run_bluespice_install() {
     
     # Let BlueSpice use its original installation process without modifications
     # Set environment variables for the installation
+    local container_name="bluespice-${WIKI_NAME}-wiki-web"
     docker exec -e "WIKI_INITIAL_ADMIN_USER=WikiSysop" \
                 -e "WIKI_INITIAL_ADMIN_PASS=$admin_password" \
                 -e "WIKI_PROTOCOL=https" \
                 -e "WIKI_HOST=$WIKI_FQDN" \
                 -e "WIKI_PORT=443" \
-                "$container" /app/bin/run-installation
+                "$container_name" /app/bin/run-installation
     
     log_info "BlueSpice installation completed"
 }
