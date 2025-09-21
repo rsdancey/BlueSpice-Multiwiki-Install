@@ -364,12 +364,6 @@ copy_config_files_to_container() {
     local post_init_file="${wiki_dir}/post-init-settings.php"
     local copy_success=true
     
-    # Check if container is running
-    if ! docker ps --format "table {{.Names}}" | grep -q "^${container_name}$"; then
-        log_info "Container ${container_name} is not running - files will be copied when container starts via volume mount"
-        return 0
-    fi
-    
     log_info "Copying configuration files to running container..."
     
     # Copy pre-init-settings.php
@@ -471,12 +465,6 @@ setup_interactive_oauth_config() {
             return 1
         fi
             
-        # Copy the updated configuration to the container
-        docker cp "$local_post_init_file" "$container_name:$container_post_init_file"
-            
-        echo ""
-        echo "OAuth configuration added successfully!"
-            
         # Store OAuth settings in .env file for reference
         local env_file="${wikis_dir}/${wiki_name}/.env"
         {
@@ -498,9 +486,6 @@ setup_interactive_oauth_config() {
             echo "❌ Failed to add OAuth placeholder configuration" >&2
             return 1
         fi
-        
-        # Copy the updated configuration to the container
-        docker cp "$local_post_init_file" "$container_name:$container_post_init_file"
     fi
     
     return 0
