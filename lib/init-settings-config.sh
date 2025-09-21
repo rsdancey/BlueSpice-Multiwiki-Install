@@ -44,19 +44,6 @@ PREINIT_EOF
         return 1
     fi
     
-    # Check if file has content
-    if [[ ! -s "$pre_init_file" ]]; then
-        log_error "pre-init-settings.php file was created but is empty"
-        return 1
-    fi
-    
-    log_info "Created pre-init-settings.php successfully"
-    log_info "File size: $(wc -c < "$pre_init_file") bytes"
-    
-    # Set correct ownership for Docker container (bluespice user UID:GID is typically bluespice:bluespice)
-    if command -v chown >/dev/null 2>&1; then
-        chown bluespice:bluespice "$pre_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
-    fi
     return 0
 }
 
@@ -103,6 +90,7 @@ create_post_init_settings() {
 ];   
 
 # add a function to autoadd new users to basic groups                                                                                 
+# NOTE: Comment this out if you want the public to read and not edit
     \$wgHooks['LocalUserCreated'][] = function ( User \$user, \$autocreated ) {
     \$services = MediaWiki\\MediaWikiServices::getInstance();
     \$userGroupManager = \$services->getUserGroupManager();
@@ -113,13 +101,6 @@ create_post_init_settings() {
 # Post-initialization settings
 # Additional configurations will be appended below
 POSTINIT_BASE_EOF
-    
-    log_info "Created base post-init-settings.php"
-    
-    # Set correct ownership for Docker container (bluespice user UID:GID is typically bluespice:bluespice)
-    if command -v chown >/dev/null 2>&1; then
-        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
-    fi
     
     return 0
 }
@@ -163,12 +144,6 @@ add_smtp_configuration() {
 ];
 SMTP_CONFIG_EOF
     
-    # Set correct ownership for Docker container
-    if command -v chown >/dev/null 2>&1; then
-        chown bluespice:bluespice "$post_init_file" 2>/dev/null || log_info "Note: Could not set file ownership (may require sudo)"
-    fi
-    
-    log_info "SMTP configuration added successfully"
     return 0
 }
 
@@ -190,18 +165,17 @@ if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
     wfLoadExtension( 'PluggableAuth' );
     
     # Ensure OpenIDConnect has its dependencies before loading
-    $openIDConnectPath = $IP . '/extensions/OpenIDConnect';
-    if ( file_exists( $openIDConnectPath . '/vendor/autoload.php' ) ) {
-        require_once $openIDConnectPath . '/vendor/autoload.php';
-    } elseif ( file_exists( $openIDConnectPath . '/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php' ) ) {
-        require_once $openIDConnectPath . '/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php';
+    \$openIDConnectPath = $IP . '/extensions/OpenIDConnect';
+    if ( file_exists( \$openIDConnectPath . '/vendor/autoload.php' ) ) {
+        require_once \$openIDConnectPath . '/vendor/autoload.php';
+    } elseif ( file_exists( \$openIDConnectPath . '/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php' ) ) {
+        require_once \$openIDConnectPath . '/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php';
     }
     
     wfLoadExtension( 'OpenIDConnect' );
 }
 AUTH_EXTENSIONS_EOF
     
-    log_info "OAuth extension loading configuration added"
     return 0
 }
 
@@ -253,7 +227,6 @@ add_google_oauth_config() {
 \$wgOpenIDConnect_UseRealNameAsUserName = false;
 OAUTH_CONFIG_EOF
     
-    log_info "Google OAuth configuration added successfully"
     return 0
 }
 
@@ -275,7 +248,7 @@ add_oauth_placeholder_config() {
 
 /*
 
-$wgPluggableAuth_Config["Google"] = [
+\$wgPluggableAuth_Config["Google"] = [
     "plugin" => "OpenIDConnect",
     "data" => [
         "providerURL" => "https://accounts.google.com/.well-known/openid-configuration",
@@ -306,7 +279,6 @@ $wgPluggableAuth_Config["Google"] = [
 */
 OAUTH_PLACEHOLDER_EOF
     
-    log_info "OAuth placeholder configuration added"
     return 0
 }
 
@@ -352,56 +324,40 @@ create-init-settings-config-files() {
 
 # Copy configuration files to running container
 copy_config_files_to_container() {
-    local wiki_name="$1"
+    local container_name="$1"
     local wiki_dir="$2"
-    local container_name="bluespice-${wiki_name}-wiki-web"
     local pre_init_file="${wiki_dir}/pre-init-settings.php"
     local post_init_file="${wiki_dir}/post-init-settings.php"
-    local copy_success=true
     
     log_info "Creating configuration files in container with correct ownership..."
     
     # Create pre-init-settings.php in container with correct ownership
     if [[ -f "$pre_init_file" ]]; then
-        log_info "Creating pre-init-settings.php in container with bluespice ownership..."
-        # Read file content into variable
-        local pre_init_content
-        pre_init_content=$(cat "$pre_init_file")
-        # Create file using printf to pass content directly
-        if docker exec --user bluespice:bluespice "$container_name" bash -c "printf '%s' \"\$0\" > /data/bluespice/pre-init-settings.php" "$pre_init_content"; then
-            log_info "✓ Created pre-init-settings.php in container with bluespice ownership"
-        else
-            log_error "Failed to create pre-init-settings.php in container"
-            copy_success=false
-        fi
-    else
-        log_warn "pre-init-settings.php not found at $pre_init_file"
-        copy_success=false
-    fi
-    
-    # Create post-init-settings.php in container with correct ownership
-    if [[ -f "$post_init_file" ]]; then
-        log_info "Creating post-init-settings.php in container with bluespice ownership..."
-        # Read file content into variable
-        local post_init_content
-        post_init_content=$(cat "$post_init_file")
-        # Create file using printf to pass content directly
-        if docker exec --user bluespice:bluespice "$container_name" bash -c "printf '%s' \"\$0\" > /data/bluespice/post-init-settings.php" "$post_init_content"; then
-            log_info "✓ Created post-init-settings.php in container with bluespice ownership"
-        else
-            log_error "Failed to create post-init-settings.php in container"
-            copy_success=false
-        fi
-    else
-        log_warn "post-init-settings.php not found at $post_init_file"
-        copy_success=false
-    fi
-    
-    if [[ "$copy_success" == "true" ]]; then
-        return 0
-    else
+
+        if ! docker_copy_to_container "$container_name" "$pre_init_file" "/data/bluespice/"; then
+        echo "❌ Failed to copy pre-init-settings.php to container"
         return 1
     fi
+
+    if ! docker_set_ownership "$container_name" "/data/bluespice/$pre_init_file"; then
+        echo "❌ Failed to set ownership for pre-init-file.php in container"
+        return 1
+    fi
+
+
+    # Create post-init-settings.php in container with correct ownership
+    if [[ -f "$post_init_file" ]]; then
+
+        if ! docker_copy_to_container "$container_name" "$post_init_file" "/data/bluespice/"; then
+        echo "❌ Failed to copy pre-init-settings.php to container"
+        return 1
+    fi
+
+    if ! docker_set_ownership "$container_name" "/data/bluespice/$post_init_file"; then
+        echo "❌ Failed to set ownership for pre-init-file.php in container"
+        return 1
+    fi
+    return 0
 }
 
 # Interactive OAuth configuration setup

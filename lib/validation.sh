@@ -10,18 +10,18 @@ validate_wiki_name() {
     local name="$1"
     
     if [[ -z "$name" ]]; then
-        echo "❌ Wiki name cannot be empty" >&2
+        log_error "❌ Wiki name cannot be empty" >&2
         return 1
     fi
     
     if [[ ! "$name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-        echo "❌ Wiki name must contain only alphanumeric characters, dots, dashes, and underscores" >&2
-        echo "   Current value: '$name'" >&2
+        log_error "❌ Wiki name must contain only alphanumeric characters, dots, dashes, and underscores" >&2
+        log_error "   Current value: '$name'" >&2
         return 1
     fi
     
     if [[ ${#name} -gt 50 ]]; then
-        echo "❌ Wiki name must be 50 characters or less" >&2
+        log_error "❌ Wiki name must be 50 characters or less" >&2
         return 1
     fi
     
@@ -33,14 +33,13 @@ validate_domain() {
     local domain="$1"
     
     if [[ -z "$domain" ]]; then
-        echo "❌ Domain name cannot be empty" >&2
+        log_error "❌ Domain name cannot be empty" >&2
         return 1
     fi
     
     if [[ ! "$domain" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        echo "❌ Invalid domain format. Expected format: subdomain.domain.tld" >&2
-        echo "   Examples: wiki.example.com, docs.mysite.org" >&2
-        echo "   Current value: '$domain'" >&2
+        log_error "❌ Invalid domain format. Expected format: subdomain.domain.tld" >&2
+        log_error "   Current value: '$domain'" >&2
         return 1
     fi
     
@@ -52,22 +51,20 @@ validate_smtp_host() {
     local host="$1"
     
     if [[ -z "$host" ]]; then
-        echo "❌ SMTP host cannot be empty" >&2
+        log_error "❌ SMTP host cannot be empty" >&2
         return 1
     fi
     
     # Check if host follows basic hostname format
     if [[ ! "$host" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$ ]]; then
-        echo "❌ Invalid SMTP host format" >&2
-        echo "   Expected format: smtp.domain.com" >&2
-        echo "   Current value: '$host'" >&2
+        log_error "❌ Invalid SMTP host format" >&2
+        log_error "   Current value: '$host'" >&2
         return 1
     fi
     
     # Check if host contains at least one dot (domain format)
     if [[ ! "$host" =~ \. ]]; then
-        echo "❌ SMTP host must be a fully qualified domain name" >&2
-        echo "   Examples: smtp.gmail.com, mail.company.com" >&2
+        log_error "❌ SMTP host must be a fully qualified domain name" >&2
         return 1
     fi
     
@@ -79,13 +76,13 @@ validate_smtp_pass() {
     local password="$1"
     
     if [[ -z "$password" ]]; then
-        echo "❌ SMTP password cannot be empty" >&2
+        log_error "❌ SMTP password cannot be empty" >&2
         return 1
     fi
     
     # Check if password contains spaces
     if [[ "$password" =~ [[:space:]] ]]; then
-        echo "❌ SMTP password cannot contain spaces" >&2
+        log_error "❌ SMTP password cannot contain spaces" >&2
         return 1
     fi
     
@@ -97,14 +94,13 @@ validate_email() {
     local email="$1"
     
     if [[ -z "$email" ]]; then
-        echo "❌ Email address cannot be empty" >&2
+        log_error "❌ Email address cannot be empty" >&2
         return 1
     fi
     
     if [[ ! "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        echo "❌ Invalid email format" >&2
-        echo "   Expected format: user@domain.com" >&2
-        echo "   Current value: '$email'" >&2
+        log_error "❌ Invalid email format" >&2
+        log_error "   Current value: '$email'" >&2
         return 1
     fi
     
@@ -117,17 +113,17 @@ validate_file_exists() {
     local description="${2:-File}"
     
     if [[ -z "$file_path" ]]; then
-        echo "❌ $description path cannot be empty" >&2
+        log_error "❌ $description path cannot be empty" >&2
         return 1
     fi
     
     if [[ ! -f "$file_path" ]]; then
-        echo "❌ $description not found: $file_path" >&2
+        log_error "❌ $description not found: $file_path" >&2
         return 1
     fi
     
     if [[ ! -r "$file_path" ]]; then
-        echo "❌ $description is not readable: $file_path" >&2
+        log_error "❌ $description is not readable: $file_path" >&2
         return 1
     fi
     
@@ -140,19 +136,19 @@ validate_port() {
     local description="${2:-Port}"
     
     if [[ -z "$port" ]]; then
-        echo "❌ $description cannot be empty" >&2
+        log_error "❌ $description cannot be empty" >&2
         return 1
     fi
     
     if [[ ! "$port" =~ ^[0-9]+$ ]]; then
-        echo "❌ $description must be a number" >&2
-        echo "   Current value: '$port'" >&2
+        log_error "❌ $description must be a number" >&2
+        log_error "   Current value: '$port'" >&2
         return 1
     fi
     
     if [[ $port -lt 1 || $port -gt 65535 ]]; then
-        echo "❌ $description must be between 1 and 65535" >&2
-        echo "   Current value: $port" >&2
+        log_error "❌ $description must be between 1 and 65535" >&2
+        log_error "   Current value: $port" >&2
         return 1
     fi
     
@@ -165,7 +161,7 @@ validate_language_code() {
     local valid_languages=("en" "de" "fr" "es" "it" "pt" "nl" "pl" "ru" "ja" "zh")
     
     if [[ -z "$lang" ]]; then
-        echo "❌ Language code cannot be empty" >&2
+        log_error "❌ Language code cannot be empty" >&2
         return 1
     fi
     
@@ -174,8 +170,8 @@ validate_language_code() {
             return 0
         fi
     done
-    
-    echo "❌ Invalid language code: $lang" >&2
-    echo "   Valid options: ${valid_languages[*]}" >&2
+  
+    log_error "❌ Invalid language code: $lang" >&2
+    log_error "   Valid options: ${valid_languages[*]}" >&2
     return 1
 }
