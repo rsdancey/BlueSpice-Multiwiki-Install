@@ -217,6 +217,11 @@ install_auth_extensions() {
     cd /
     [[ -n "${temp_dir:-}" ]] && rm -rf "$temp_dir"
  
+    docker_exec_safe "$wiki_name" "php /app/bluespice/w/composer.phar update"
+    docker_exec_safe "$wiki_name" "php /app/bluespice/w/composer.phar install"
+        docker_exec_safe "$wiki_name" "php /app/bluespice/w/maintenance/run.php update.php"
+
+
     return 0
 }
 
