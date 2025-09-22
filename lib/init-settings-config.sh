@@ -165,19 +165,19 @@ add_oauth_extensions_config() {
 # ============================================
 
 # Load web-only auth integrations (skip for CLI/maintenance)
-if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
+#if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
     wfLoadExtension( 'PluggableAuth' );
     
     # Ensure OpenIDConnect has its dependencies before loading
-    $openIDConnectPath = $IP . "/extensions/OpenIDConnect";
-    if ( file_exists( $openIDConnectPath . "/vendor/autoload.php" ) ) {
-        require_once $openIDConnectPath . "/vendor/autoload.php";
-    } elseif ( file_exists( $openIDConnectPath . "/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php" ) ) {
-        require_once $openIDConnectPath . "/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php";
-    }
+#    $openIDConnectPath = $IP . "/extensions/OpenIDConnect";
+#    if ( file_exists( $openIDConnectPath . "/vendor/autoload.php" ) ) {
+#        require_once $openIDConnectPath . "/vendor/autoload.php";
+#    } elseif ( file_exists( $openIDConnectPath . "/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php" ) ) {
+#        require_once $openIDConnectPath . "/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php";
+#    }
     
     wfLoadExtension( 'OpenIDConnect' );
-}
+#}
 AUTH_EXTENSIONS_EOF
     
     return 0
