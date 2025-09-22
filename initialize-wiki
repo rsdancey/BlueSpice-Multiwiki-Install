@@ -719,7 +719,7 @@ main() {
         fi
     fi
 
-    run_maintenance_script
+    docker_exec_safe "$WIKI_NAME" "/app/bin/run-maintenance update.php --quick --doshared"
     setup_ssl
     
     # Show completion information
