@@ -413,8 +413,7 @@ restore_from_backup() {
     
     # Run MediaWiki maintenance updates after restoration
     echo "Running MediaWiki maintenance updates..."
-    
-    # Update database schema and cache
+
     if docker_exec_safe "$WIKI_NAME" "php /app/bluespice/w/maintenance/update.php --quick"; then
         echo "✓ Database schema updated"
     else

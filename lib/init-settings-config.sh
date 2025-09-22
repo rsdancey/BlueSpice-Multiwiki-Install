@@ -219,7 +219,7 @@ add_google_oauth_config() {
 
 # OAuth email matching and account creation settings
 \$wgPluggableAuth_EmailMatchingOnly = ${email_matching_only};
-\$wgPluggableAuth_CreateIfDoesNotExist = ${create_if_not_exist};
+\$wgGroupPermissions['*']['createaccount'] = false;
 
 # Essential settings to prevent pluggableauth-fatal-error
 \$wgPluggableAuth_EnableLocalProperties = true;
@@ -407,25 +407,13 @@ setup_interactive_oauth_config() {
             read -r oauth_client_secret
         done
             
-        # Ask about account creation settings
-        printf "Allow automatic account creation for Google users? [Y/n]: "
-        read -r allow_autocreate
-            
-        local create_if_not_exist="true"
-        local email_matching_only="false"
-            
-        if [[ "${allow_autocreate,,}" == "n" ]]; then
-            create_if_not_exist="false"
-            email_matching_only="true"
-        fi
-            
         # Add Google OAuth configuration using the centralized function
         local wikis_dir
         wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
         local wiki_dir="${wikis_dir}/${wiki_name}"
         local local_post_init_file="${wiki_dir}/post-init-settings.php"
         
-        if ! add_google_oauth_config "$local_post_init_file" "$oauth_client_id" "$oauth_client_secret" "$create_if_not_exist" "$email_matching_only"; then
+        if ! add_google_oauth_config "$local_post_init_file" "$oauth_client_id" "$oauth_client_secret"; then
             echo "❌ Failed to add OAuth configuration" >&2
             return 1
         fi

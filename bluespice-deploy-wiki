@@ -352,9 +352,6 @@ create_bluespice_files() {
     log_info "Patching MediaWiki installer to use DB_ROOT credentials..."
     docker_exec_safe "$WIKI_NAME" "sed -i 's/installdbuser=\${DB_USER}/installdbuser=\${DB_USER}/' /app/bin/run-installation.d/020-install-database"
     docker_exec_safe "$WIKI_NAME" "sed -i 's/installdbpass=\${DB_PASS}/installdbpass=\${DB_PASS}/' /app/bin/run-installation.d/020-install-database"
-    
-    # this line may be malformed and broken
-    # docker_exec_safe "$container" 'bash -c "cat > /app/bin/run-installation.d/020-install-database << \"SOCKET_PATCH_EOF\""'
 }
 
 # USED
@@ -391,13 +388,6 @@ run_bluespice_install() {
                 "$container_name" /app/bin/run-installation
     
     log_info "BlueSpice installation completed"
-}
-
-# USED
-# Run maintenance script
-run_maintenance_script() {
-    log_info "Running maintenance script..."
-    docker_exec_safe "$WIKI_NAME" "/app/bin/run-maintenance update.php --quick --doshared"
 }
 
 # Main deployment function
