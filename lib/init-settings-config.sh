@@ -231,9 +231,6 @@ add_google_oauth_config() {
 \$wgOpenIDConnect_UseRealNameAsUserName = false;
 \$wgOpenIDConnect_ForceLogout = false;
 
-# Additional debugging settings (can be removed later)
-\$wgDebugLogGroups['OpenIDConnect'] = "/tmp/oidc-debug.log";
-\$wgDebugLogGroups['PluggableAuth'] = "/tmp/pluggableauth-debug.log";
 OAUTH_CONFIG_EOF
     
     return 0
