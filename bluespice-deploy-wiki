@@ -175,15 +175,8 @@ create_data_directories() {
     if [[ ! -d "$wiki_data_dir" ]]; then
         log_info "Creating wiki data directory: $wiki_data_dir"
         mkdir -p "$wiki_data_dir"
-        # commenting this out to see if this works without assuming root
-            # chmod 775 "$wiki_data_dir" 2>/dev/null || sudo chmod 775 "$wiki_data_dir" || true
-            # Set ownership to allow container access
-            # chown 1002:bluespice "$wiki_data_dir" 2>/dev/null || sudo chown 1002:bluespice "$wiki_data_dir" || true
     fi
     
-    # Ensure all subdirectories have correct ownership
-    # commenting this out to see if this works without assuming root
-    # sudo chown -R 1002:bluespice "$wiki_data_dir" 2>/dev/null || true
     
     local container="${CONTAINER_PREFIX}-wiki-web"
     
@@ -192,7 +185,7 @@ create_data_directories() {
     
     # Create dummy MySQL socket directory to satisfy PHP configuration
     docker_exec_safe "$WIKI_NAME" "mkdir -p /run/mysqld"
-    docker_exec_safe "$WIKI_NAME" "chmod 777 /run/mysqld"
+    docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /run/mysqld"
     
     # Create BlueSpice-specific subdirectories that containers expect
     # These paths are inside the container at /data/bluespice
@@ -214,7 +207,7 @@ create_data_directories() {
     
     # Ensure temp directory for UUID generator used by GlobalIdGenerator
     docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/${WIKI_NAME}"
-    docker_exec_safe "$WIKI_NAME" "chmod 1777 /tmp/${WIKI_NAME}"
+    docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /tmp/${WIKI_NAME}"
 
     # Ensure SimpleSAMLphp cert directory for scripts expecting /data/simplesamlphp/certs
     docker_exec_safe "$WIKI_NAME" "mkdir -p /data/simplesamlphp/certs"
