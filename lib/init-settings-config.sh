@@ -216,6 +216,9 @@ add_google_oauth_config() {
 \$wgPluggableAuth_EnableAutoLogin = false;
 
 # OAuth email matching and account creation settings
+# These settings restrict the ability of a user to self-create an account by authenticating via google
+\$wgOpenIDConnect_MigrateUsers = false;  
+\$wgGroupPermissions['*']['autocreateaccount'] = false;
 \$wgGroupPermissions['*']['createaccount'] = false;
 
 # Essential settings to prevent pluggableauth-fatal-error
@@ -268,8 +271,11 @@ add_oauth_placeholder_config() {
 \$wgPluggableAuth_EnableLocalLogin = true;
 \$wgPluggableAuth_EnableAutoLogin = false;
 
-# Explicitly prevent automatic user creation if not enabled
-\$wgGroupPermissions["*"]["autocreateaccount"] = ${create_if_not_exist};
+# OAuth email matching and account creation settings
+# These settings restrict the ability of a user to self-create an account by authenticating via google
+\$wgOpenIDConnect_MigrateUsers = false;  
+\$wgGroupPermissions['*']['autocreateaccount'] = false;
+\$wgGroupPermissions['*']['createaccount'] = false;
 
 # Additional OpenIDConnect settings
 \$wgOpenIDConnect_UseEmailNameAsUserName = false;
