@@ -208,7 +208,7 @@ add_google_oauth_config() {
         "clientSecret" => "${oauth_client_secret}",
         "scope" => ["openid", "email", "profile"],
         "email_key" => "email",
-        "realname_key" => "name"
+        "use_email_mapping" => true
     ],
     "buttonLabelMessage" => "Login with Google"
 ];

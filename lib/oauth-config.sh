@@ -46,7 +46,7 @@ download_extension() {
         return 0
     fi
     
-    log_warn "$primary_url failed"
+    log_warn "**$primary_url** failed"
     log_warn "  ⚠️ Primary download failed, trying fallback source..."
     
     # Try fallback URL
@@ -124,7 +124,7 @@ install_auth_extensions() {
     
     # Download OpenIDConnect extension
     if ! download_extension "OpenIDConnect" "$temp_dir" \
-        "https://extdist.wmflabs.org/dist/extensions/OpenIDConnect-REL1_43-c6a351c.tar.gz " \
+        "https://extdist.wmflabs.org/dist/extensions/OpenIDConnect-REL1_43-c6a351c.tar.gz" \
         "https://github.com/wikimedia/mediawiki-extensions-OpenIDConnect/archive/refs/heads/REL1_43.tar.gz"; then
         return 1
     fi
