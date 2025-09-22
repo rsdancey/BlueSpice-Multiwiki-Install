@@ -219,7 +219,7 @@ install_auth_extensions() {
  
     docker_exec_safe "$wiki_name" "php /app/bluespice/w/composer.phar update"
     docker_exec_safe "$wiki_name" "php /app/bluespice/w/composer.phar install"
-        docker_exec_safe "$wiki_name" "php /app/bluespice/w/maintenance/run.php update.php"
+    docker_exec_safe "$wiki_name" "php /app/bluespice/w/maintenance/run.php update.php"
 
 
     return 0

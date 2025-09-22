@@ -718,7 +718,8 @@ main() {
             exit $exit_code
         fi
     fi
-    
+
+    run_maintenance_script
     setup_ssl
     
     # Show completion information

@@ -435,7 +435,6 @@ deploy_wiki() {
             generate_admin_password
             create_bluespice_files
             run_bluespice_install
-            run_maintenance_script
                         
             # Now restart the task container
             log_info "Starting task container..."
