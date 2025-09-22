@@ -216,7 +216,6 @@ add_google_oauth_config() {
 \$wgPluggableAuth_EnableAutoLogin = false;
 
 # OAuth email matching and account creation settings
-\$wgPluggableAuth_EmailMatchingOnly = ${email_matching_only};
 \$wgGroupPermissions['*']['createaccount'] = false;
 
 # Essential settings to prevent pluggableauth-fatal-error
@@ -268,10 +267,6 @@ add_oauth_placeholder_config() {
 # Enable local login alongside PluggableAuth
 \$wgPluggableAuth_EnableLocalLogin = true;
 \$wgPluggableAuth_EnableAutoLogin = false;
-
-# OAuth email matching and account creation settings
-\$wgPluggableAuth_EmailMatchingOnly = ${email_matching_only};
-\$wgPluggableAuth_CreateIfDoesNotExist = ${create_if_not_exist};
 
 # Explicitly prevent automatic user creation if not enabled
 \$wgGroupPermissions["*"]["autocreateaccount"] = ${create_if_not_exist};
@@ -423,7 +418,6 @@ setup_interactive_oauth_config() {
             echo "# Google OAuth Settings"
             echo "OAUTH_CLIENT_ID=${oauth_client_id}"
             echo "OAUTH_CLIENT_SECRET=${oauth_client_secret}"
-            echo "OAUTH_AUTOCREATE=${create_if_not_exist}"
         } >> "$env_file"
     else
         log_info "OAuth configuration skipped"
