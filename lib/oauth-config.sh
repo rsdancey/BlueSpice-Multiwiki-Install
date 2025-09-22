@@ -175,7 +175,7 @@ install_auth_extensions() {
             echo "  ✓ Composer installed successfully at /app/bluespice/w/composer.phar"
         else
             log_error "  ❌ Failed to install Composer using official method"
-            composer_failed=true
+            return 1
         fi
     fi
 
@@ -187,8 +187,8 @@ install_auth_extensions() {
         elif docker_exec_safe "$wiki_name" "cd /app/bluespice/w/extensions/OpenIDConnect && /app/bluespice/w/composer.phar install"; then
             log_info "  ✓ OpenIDConnect dependencies installed successfully (method 2)"
         else
-            log_error "  ⚠️ Composer methods failed"
-            composer_failed=true
+            log_error "  ❌ Composer methods failed"
+            return 1
         fi
     fi
 
@@ -217,10 +217,17 @@ install_auth_extensions() {
     cd /
     [[ -n "${temp_dir:-}" ]] && rm -rf "$temp_dir"
  
-    docker_exec_safe "$wiki_name" "php /app/bluespice/w/composer.phar update"
-    docker_exec_safe "$wiki_name" "php /app/bluespice/w/composer.phar install"
-    docker_exec_safe "$wiki_name" "php /app/bluespice/w/maintenance/run.php update.php"
-
+         if docker_exec_safe "$wiki_name" "
+            cd /app/bluespice/w &&
+            php /app/bluespice/w/composer.phar update &&
+            php /app/bluespice/w/composer.phar install &&
+            php /app/bluespice/w/maintenance/run.php update.php
+        " 2>/dev/null; then
+            echo "  ✓ Composer and Maintenance Scripts have run"
+        else
+            log_error "  ❌ Failed to run Composer and Maintenance scripts"
+            return 1
+        fi
 
     return 0
 }
