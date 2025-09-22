@@ -221,6 +221,10 @@ add_google_oauth_config() {
 \$wgPluggableAuth_EmailMatchingOnly = ${email_matching_only};
 \$wgPluggableAuth_CreateIfDoesNotExist = ${create_if_not_exist};
 
+# Essential settings to prevent pluggableauth-fatal-error
+\$wgPluggableAuth_EnableLocalProperties = true;
+\$wgPluggableAuth_EnableLocalUsers = true;
+
 # OpenIDConnect specific settings for proper user mapping
 \$wgOpenIDConnect_UseEmailNameAsUserName = false;
 \$wgOpenIDConnect_MigrateUsersByEmail = true;
