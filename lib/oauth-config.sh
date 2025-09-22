@@ -231,12 +231,6 @@ install_auth_extensions() {
         return 1
     fi
 
-    if docker_exec_safe "$wiki_name" "cd /app/bluespice/w php maintenance/run.php update.php" 2>/dev/null; then
-        echo "  ✓ Update script has run"
-    else
-        log_error "  ❌ Failed to run Update script"
-        return 1
-    fi
 
     return 0
 }
