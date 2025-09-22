@@ -117,14 +117,14 @@ install_auth_extensions() {
     
     # Download PluggableAuth extension
     if ! download_extension "PluggableAuth" "$temp_dir" \
-        "https://extdist.wmflabs.org/dist/extensions/PluggableAuth-REL1_44-cea83e0.tar.gz" \
-        "https://github.com/wikimedia/mediawiki-extensions-PluggableAuth/archive/refs/heads/REL1_43.tar.gz"; then
+        "https://extdist.wmflabs.org/dist/extensions/PluggableAuth-REL1_42-1dd63fd.tar.gz" \
+        "https://github.com/wikimedia/mediawiki-extensions-PluggableAuth/archive/refs/heads/REL1_42.tar.gz"; then
         return 1
     fi
     
     # Download OpenIDConnect extension
     if ! download_extension "OpenIDConnect" "$temp_dir" \
-        "https://extdist.wmflabs.org/dist/extensions/OpenIDConnect-REL1_44-31ecc84.tar.gz" \
+        "https://extdist.wmflabs.org/dist/extensions/OpenIDConnect-REL1_43-c6a351c.tar.gz " \
         "https://github.com/wikimedia/mediawiki-extensions-OpenIDConnect/archive/refs/heads/REL1_43.tar.gz"; then
         return 1
     fi
