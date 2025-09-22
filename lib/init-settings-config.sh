@@ -188,8 +188,6 @@ add_google_oauth_config() {
     local post_init_file="$1"
     local oauth_client_id="$2"
     local oauth_client_secret="$3"
-    local create_if_not_exist="$4"
-    local email_matching_only="$5"
     
     log_info "Adding Google OAuth configuration..."
     
