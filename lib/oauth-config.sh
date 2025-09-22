@@ -217,10 +217,24 @@ install_auth_extensions() {
     cd /
     [[ -n "${temp_dir:-}" ]] && rm -rf "$temp_dir"
  
-    if docker_exec_safe "$wiki_name" "cd /app/bluespice/w php composer.phar update php composer.phar install php maintenance/run.php update.php" 2>/dev/null; then
-        echo "  ✓ Composer and Maintenance Scripts have run"
+    if docker_exec_safe "$wiki_name" "cd /app/bluespice/w php composer.phar update" 2>/dev/null; then
+        echo "  ✓ Composer update has run"
     else
-        log_error "  ❌ Failed to run Composer and Maintenance scripts"
+        log_error "  ❌ Failed to run Composer update"
+        return 1
+    fi
+
+    if docker_exec_safe "$wiki_name" "cd /app/bluespice/w php composer.phar install" 2>/dev/null; then
+        echo "  ✓ Composer install has run"
+    else
+        log_error "  ❌ Failed to run Composer install"
+        return 1
+    fi
+
+    if docker_exec_safe "$wiki_name" "cd /app/bluespice/w php maintenance/run.php update.php" 2>/dev/null; then
+        echo "  ✓ Update script has run"
+    else
+        log_error "  ❌ Failed to run Update script"
         return 1
     fi
 
