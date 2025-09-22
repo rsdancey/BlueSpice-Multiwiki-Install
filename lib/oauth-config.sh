@@ -118,7 +118,7 @@ install_auth_extensions() {
     # Download PluggableAuth extension
     if ! download_extension "PluggableAuth" "$temp_dir" \
         "https://extdist.wmflabs.org/dist/extensions/PluggableAuth-REL1_43-21f9a51.tar.gz" \
-        "https://github.com/wikimedia/mediawiki-extensions-PluggableAuth/archive/refs/heads/REL1_42.tar.gz"; then
+        "https://github.com/wikimedia/mediawiki-extensions-PluggableAuth/archive/refs/heads/REL1_43.tar.gz"; then
         return 1
     fi
     
