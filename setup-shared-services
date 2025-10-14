@@ -41,6 +41,40 @@ ADMIN_MAIL=${NEW_EMAIL:-$CURRENT_EMAIL}
 
 echo "Using admin mail: $ADMIN_MAIL"
 
+# Ensure a host-side directory exists with correct group and permissions
+ensure_host_dir_permissions() {
+    local path="$1"
+    if [[ ! -d "$path" ]]; then
+        sudo mkdir -p "$path" 2>/dev/null || mkdir -p "$path"
+    fi
+    sudo chgrp -R bluespice "$path" 2>/dev/null || true
+    sudo chmod -R g+rwX "$path" 2>/dev/null || true
+    sudo find "$path" -type d -exec chmod g+s {} + 2>/dev/null || true
+}
+
+# Pre-create shared data directories with correct perms to avoid root-only Docker-created paths
+prepare_shared_data_dirs() {
+    # DATA_DIR may be present from .shared.env; default conservatively to /bluespice
+    local base_dir="${DATA_DIR:-/bluespice}"
+    local dirs=(
+        "$base_dir"
+        "$base_dir/proxy/vhost.d"
+        "$base_dir/proxy/html"
+        "$base_dir/proxy/certs"
+        "$base_dir/proxy/conf.d"
+        "$base_dir/letsencrypt"
+        "$base_dir/search"
+        "$base_dir/database/data"
+        "$base_dir/database/logs"
+    )
+    for d in "${dirs[@]}"; do
+        ensure_host_dir_permissions "$d"
+    done
+}
+
+# Ensure shared data directories exist with correct permissions
+prepare_shared_data_dirs
+
 # Update environment file if needed
 if [[ -f "$SHARED_ENV" ]] && grep -q "ADMIN_MAIL=" "$SHARED_ENV"; then
     sed -i "s/^ADMIN_MAIL=.*/ADMIN_MAIL=${ADMIN_MAIL}/" "$SHARED_ENV"

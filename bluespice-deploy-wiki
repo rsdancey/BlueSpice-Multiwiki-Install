@@ -167,11 +167,34 @@ parse_arguments() {
 
 # USED
 # Create required data directories
+
+# Ensure a host-side directory exists with correct group and permissions
+ensure_host_dir_permissions() {
+    local path="$1"
+    # Create dir if missing
+    if [[ ! -d "$path" ]]; then
+        sudo mkdir -p "$path" 2>/dev/null || mkdir -p "$path"
+    fi
+    # Set group to bluespice and group-writable, setgid on dirs
+    sudo chgrp -R bluespice "$path" 2>/dev/null || true
+    sudo chmod -R g+rwX "$path" 2>/dev/null || true
+    sudo find "$path" -type d -exec chmod g+s {} + 2>/dev/null || true
+}
+
 create_data_directories() {
     log_info "Creating required directories for $WIKI_NAME..."
     
     # Create wiki-specific data directory on host
     local wiki_data_dir="${DATA_DIR}/${WIKI_NAME}"
+    # Ensure parent DATA_DIR exists and has correct group/perms on host
+    ensure_host_dir_permissions "${DATA_DIR}"
+    
+    # Ensure wiki-specific directory exists and has correct group/perms on host
+    if [[ ! -d "$wiki_data_dir" ]]; then
+        sudo mkdir -p "$wiki_data_dir" 2>/dev/null || mkdir -p "$wiki_data_dir"
+    fi
+    ensure_host_dir_permissions "$wiki_data_dir"
+    
     if [[ ! -d "$wiki_data_dir" ]]; then
         log_info "Creating wiki data directory: $wiki_data_dir"
         mkdir -p "$wiki_data_dir"
@@ -220,12 +243,9 @@ create_data_directories() {
 # Fix data directory permissions for BlueSpice
 fix_data_permissions() {
     log_info "Fixing data directory permissions for $WIKI_NAME..."
-    
-    # The wiki-specific data directory needs to be writable by the bluespice user (UID 1002)
     local wiki_data_dir="${DATA_DIR}/${WIKI_NAME}"
-    # sudo chown -R 1002:bluespice "$wiki_data_dir" 2>/dev/null || true
-    # sudo chmod -R 775 "$wiki_data_dir" 2>/dev/null || true
-    
+    ensure_host_dir_permissions "${DATA_DIR}"
+    ensure_host_dir_permissions "$wiki_data_dir"
     log_info "Data directory permissions fixed for $WIKI_NAME"
 }
 
@@ -315,6 +335,8 @@ SQL_EOF
 # Generate admin password
 generate_admin_password() {
     local password_file="${DATA_DIR}/${WIKI_NAME}/initialAdminPassword"
+    # Ensure target directory exists with correct perms before writing
+    ensure_host_dir_permissions "${DATA_DIR}/${WIKI_NAME}"
     
     if [ -f "$password_file" ]; then
         log_info "Using existing admin password from $password_file"
@@ -417,7 +439,7 @@ deploy_wiki() {
         if wait_for_healthy "${CONTAINER_PREFIX}-wiki-web"; then
             # Create data directories and fix permissions after containers are running
             create_data_directories
-            #fix_data_permissions
+            fix_data_permissions
 
             # Run installation with correct environment
             test_database_connectivity
@@ -493,5 +515,4 @@ main() {
 
 # Execute main function with all arguments
 main "$@"
-
 
