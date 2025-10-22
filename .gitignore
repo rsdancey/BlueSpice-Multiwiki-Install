@@ -63,3 +63,7 @@ backup_*
 shared/.shared.env
 .global.env
 REFACTORING_SUMMARY.md
+
+# Local backups and stderr logs
+*.bak_*
+*.stderr
