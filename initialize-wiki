@@ -38,7 +38,7 @@ SMTP_USER=""
 SMTP_PASS=""
 
 # Source modular libraries with error checking
-for lib in validation config docker-utils oauth-config init-settings-config; do
+for lib in validation config docker-utils oauth-config init-settings-config logrotate-config; do
     lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -694,7 +694,16 @@ main() {
         log_error "Writing configuration files to container failed"
         exit 1
     fi
-    
+
+    # Install per-wiki logrotate configuration on host
+    if command -v create_wiki_logrotate_config >/dev/null 2>&1; then
+        if ! create_wiki_logrotate_config "$WIKI_NAME" "${DATA_DIR}"; then
+            log_warn "Per-wiki logrotate config not installed automatically; you can install it later."
+        fi
+    else
+        log_warn "Logrotate helper not available; skipping per-wiki logrotate configuration."
+    fi
+
     # Handle backup restoration if selected
     if [[ "$SETUP_MODE" == "restore" ]]; then
         if ! restore_from_backup "$BACKUP_FILE"; then
