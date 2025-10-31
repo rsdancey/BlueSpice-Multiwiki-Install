@@ -35,7 +35,7 @@ services:
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g"
       - "OPENSEARCH_PATH_CONF=/usr/share/opensearch/config"
     ulimits:
       memlock:
@@ -46,7 +46,7 @@ services:
         hard: 65536
     healthcheck:
       test: curl -f http://localhost:9200 || exit 1
-      start_period: 30s
+      start_period: 90s
       interval: 30s
       timeout: 10s
       retries: 10
@@ -54,6 +54,12 @@ services:
       search-permissions:
         condition: service_completed_successfully
     <<: *common-config
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
     labels:
       com.bluespice.service: "search"
       com.bluespice.type: "persistent-data"
