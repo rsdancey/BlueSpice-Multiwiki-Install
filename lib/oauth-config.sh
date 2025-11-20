@@ -167,9 +167,10 @@ install_auth_extensions() {
         if docker_exec_safe "$wiki_name" "
             cd /app/bluespice/w &&
             php -r \"copy('https://getcomposer.org/installer', 'composer-setup.php');\" &&
-            php -r \"if (hash_file('sha384', 'composer-setup.php') === 'ed0feb545ba87161262f2d45a633e34f591ebb3381f2e0063c345ebea4d228dd0043083717770234ec00c5a9f9593792') { echo 'Installer verified'.PHP_EOL; } else { echo 'Installer corrupt'.PHP_EOL; unlink('composer-setup.php'); exit(1); }\" &&
+            php -r \"copy('https://composer.github.io/installer.sig', 'composer-setup.sig');\" &&
+            php -r \"\\\$expected_hash = trim(file_get_contents('composer-setup.sig')); \\\$actual_hash = hash_file('sha384', 'composer-setup.php'); if (\\\$actual_hash === \\\$expected_hash) { echo 'Installer verified'.PHP_EOL; } else { echo 'Installer corrupt: expected '.\\\$expected_hash.' but got '.\\\$actual_hash.PHP_EOL; unlink('composer-setup.php'); unlink('composer-setup.sig'); exit(1); }\" &&
             php composer-setup.php &&
-            php -r \"unlink('composer-setup.php');\" &&
+            php -r \"unlink('composer-setup.php'); if (file_exists('composer-setup.sig')) unlink('composer-setup.sig');\" &&
             ls -la composer.phar
         " 2>/dev/null; then
             echo "  ✓ Composer installed successfully at /app/bluespice/w/composer.phar"
