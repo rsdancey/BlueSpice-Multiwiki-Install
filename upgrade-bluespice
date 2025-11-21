@@ -1,0 +1,389 @@
+#!/bin/bash
+# BlueSpice Multi-Wiki Upgrade Script
+# Upgrades all wikis and shared infrastructure to a new BlueSpice version
+
+set -euo pipefail
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WIKIS_DIR="$(dirname "$SCRIPT_DIR")/wikis"
+SHARED_DIR="${SCRIPT_DIR}/shared"
+SHARED_ENV="${SHARED_DIR}/.shared.env"
+BACKUP_DIR="/tmp/bluespice-upgrade-$(date +%Y%m%d-%H%M%S)"
+
+# Source required libraries
+for lib in logging.sh docker-utils.sh; do
+    lib_path="${SCRIPT_DIR}/lib/${lib}"
+    if [[ ! -f "$lib_path" ]]; then
+        echo "Error: Required library not found: $lib_path" >&2
+        exit 1
+    fi
+    # shellcheck source=/dev/null
+    source "$lib_path"
+done
+
+# Usage information
+usage() {
+    cat << USAGE
+Usage: $0 [OPTIONS]
+
+Upgrade BlueSpice multi-wiki installation to a new version.
+
+OPTIONS:
+    -v, --version VERSION    Target version to upgrade to (e.g., 5.1.3)
+    -f, --force              Force upgrade even if already on target version
+    -w, --wiki-only WIKI     Upgrade only specific wiki instance
+    -s, --skip-shared        Skip shared infrastructure upgrade
+    -b, --backup-only        Only create backups, don't upgrade
+    -h, --help               Show this help message
+
+EXAMPLES:
+    # Upgrade all wikis to version 5.1.3
+    $0 --version 5.1.3
+    
+    # Upgrade only a specific wiki
+    $0 --version 5.1.3 --wiki-only mywiki
+    
+    # Upgrade wikis only (skip shared services)
+    $0 --version 5.1.3 --skip-shared
+    
+    # Create backup without upgrading
+    $0 --backup-only
+
+USAGE
+    exit 1
+}
+
+# Parse arguments
+TARGET_VERSION=""
+FORCE_UPGRADE=false
+SPECIFIC_WIKI=""
+SKIP_SHARED=false
+BACKUP_ONLY=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -v|--version)
+            TARGET_VERSION="$2"
+            shift 2
+            ;;
+        -f|--force)
+            FORCE_UPGRADE=true
+            shift
+            ;;
+        -w|--wiki-only)
+            SPECIFIC_WIKI="$2"
+            shift 2
+            ;;
+        -s|--skip-shared)
+            SKIP_SHARED=true
+            shift
+            ;;
+        -b|--backup-only)
+            BACKUP_ONLY=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            usage
+            ;;
+    esac
+done
+
+# Validate target version is specified (unless backup-only)
+if [[ -z "$TARGET_VERSION" ]] && [[ "$BACKUP_ONLY" == false ]]; then
+    log_error "Target version is required. Use --version VERSION"
+    usage
+fi
+
+# Get current version from shared .env
+get_current_version() {
+    if [[ -f "$SHARED_ENV" ]]; then
+        grep "^VERSION=" "$SHARED_ENV" | cut -d'=' -f2
+    else
+        echo "unknown"
+    fi
+}
+
+# Create backup of configuration files
+backup_configurations() {
+    log_info "Creating configuration backups in: $BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR"
+    
+    # Backup shared .env
+    if [[ -f "$SHARED_ENV" ]]; then
+        cp "$SHARED_ENV" "${BACKUP_DIR}/shared.env.backup"
+        log_info "✓ Backed up shared configuration"
+    fi
+    
+    # Backup all wiki .env files
+    local wiki_count=0
+    if [[ -d "$WIKIS_DIR" ]]; then
+        for wiki_dir in "$WIKIS_DIR"/*; do
+            if [[ -d "$wiki_dir" ]] && [[ -f "${wiki_dir}/.env" ]]; then
+                local wiki_name
+                wiki_name=$(basename "$wiki_dir")
+                cp "${wiki_dir}/.env" "${BACKUP_DIR}/${wiki_name}.env.backup"
+                wiki_count=$((wiki_count + 1))
+            fi
+        done
+        log_info "✓ Backed up $wiki_count wiki configuration(s)"
+    fi
+    
+    log_info "Backup completed: $BACKUP_DIR"
+}
+
+# Update version in a file
+update_version_in_file() {
+    local file="$1"
+    local new_version="$2"
+    
+    if [[ -f "$file" ]]; then
+        sed -i "s/^VERSION=.*/VERSION=${new_version}/" "$file"
+        sed -i "s|^BLUESPICE_WIKI_IMAGE=bluespice/wiki:.*|BLUESPICE_WIKI_IMAGE=bluespice/wiki:${new_version}|" "$file" 2>/dev/null || true
+        return 0
+    else
+        log_warn "File not found: $file"
+        return 1
+    fi
+}
+
+# Pull Docker images for new version
+pull_docker_images() {
+    local version="$1"
+    
+    log_info "Pulling Docker images for version $version"
+    
+    local images=(
+        "bluespice/wiki:${version}"
+        "bluespice/helper:${version}"
+        "bluespice/database:${version}"
+        "bluespice/search:${version}"
+        "bluespice/cache:${version}"
+    )
+    
+    for image in "${images[@]}"; do
+        log_info "Pulling $image..."
+        if docker pull "$image"; then
+            log_info "✓ Pulled $image"
+        else
+            log_error "Failed to pull $image"
+            return 1
+        fi
+    done
+    
+    log_info "✓ All Docker images pulled successfully"
+}
+
+# Upgrade shared infrastructure
+upgrade_shared_infrastructure() {
+    local version="$1"
+    
+    log_info "Upgrading shared infrastructure to version $version"
+    
+    # Update shared .env
+    if update_version_in_file "$SHARED_ENV" "$version"; then
+        log_info "✓ Updated shared configuration to version $version"
+    else
+        log_error "Failed to update shared configuration"
+        return 1
+    fi
+    
+    # Restart shared services
+    log_info "Restarting shared services..."
+    cd "$SHARED_DIR"
+    
+    if docker compose --env-file .shared.env -f docker-compose.persistent-data-services.yml up -d; then
+        log_info "✓ Shared services restarted"
+    else
+        log_error "Failed to restart shared services"
+        return 1
+    fi
+    
+    # Wait for services to be healthy
+    log_info "Waiting for shared services to be healthy..."
+    sleep 10
+    
+    local services=("bluespice-database" "bluespice-search" "bluespice-cache")
+    for service in "${services[@]}"; do
+        local health_status
+        health_status=$(docker inspect --format='{{.State.Health.Status}}' "$service" 2>/dev/null || echo "none")
+        
+        if [[ "$health_status" == "healthy" ]] || [[ "$health_status" == "none" ]]; then
+            local running_status
+            running_status=$(docker inspect --format='{{.State.Status}}' "$service" 2>/dev/null || echo "unknown")
+            if [[ "$running_status" == "running" ]]; then
+                log_info "✓ $service is running"
+            else
+                log_warn "⚠ $service status: $running_status"
+            fi
+        else
+            log_warn "⚠ $service health: $health_status"
+        fi
+    done
+}
+
+# Upgrade a single wiki
+upgrade_wiki() {
+    local wiki_name="$1"
+    local version="$2"
+    local wiki_dir="${WIKIS_DIR}/${wiki_name}"
+    
+    if [[ ! -d "$wiki_dir" ]]; then
+        log_error "Wiki directory not found: $wiki_dir"
+        return 1
+    fi
+    
+    log_info "═══════════════════════════════════════"
+    log_info "Upgrading wiki: $wiki_name"
+    log_info "═══════════════════════════════════════"
+    
+    # Update wiki .env
+    if update_version_in_file "${wiki_dir}/.env" "$version"; then
+        log_info "✓ Updated $wiki_name configuration to version $version"
+    else
+        log_error "Failed to update $wiki_name configuration"
+        return 1
+    fi
+    
+    # Run upgrade using the existing deployment script
+    log_info "Running upgrade pipeline for $wiki_name..."
+    cd "$SCRIPT_DIR"
+    
+    if [[ -x "${SCRIPT_DIR}/bluespice-deploy-wiki" ]]; then
+        if "${SCRIPT_DIR}/bluespice-deploy-wiki" --wiki-name="$wiki_name" --profile=upgrade; then
+            log_info "✓ Upgrade pipeline completed for $wiki_name"
+        else
+            log_error "Upgrade pipeline failed for $wiki_name"
+            return 1
+        fi
+    else
+        log_error "bluespice-deploy-wiki script not found or not executable"
+        return 1
+    fi
+    
+    log_info "✓ Wiki $wiki_name upgraded successfully"
+    log_info ""
+}
+
+# Get list of wikis to upgrade
+get_wiki_list() {
+    if [[ -n "$SPECIFIC_WIKI" ]]; then
+        echo "$SPECIFIC_WIKI"
+        return
+    fi
+    
+    if [[ -d "$WIKIS_DIR" ]]; then
+        for wiki_dir in "$WIKIS_DIR"/*; do
+            if [[ -d "$wiki_dir" ]] && [[ -f "${wiki_dir}/.env" ]]; then
+                basename "$wiki_dir"
+            fi
+        done
+    fi
+}
+
+# Main upgrade process
+main() {
+    local current_version
+    current_version=$(get_current_version)
+    
+    log_info "═══════════════════════════════════════════════════"
+    log_info "BlueSpice Multi-Wiki Upgrade"
+    log_info "═══════════════════════════════════════════════════"
+    log_info "Current version: $current_version"
+    
+    if [[ "$BACKUP_ONLY" == false ]]; then
+        log_info "Target version:  $TARGET_VERSION"
+    else
+        log_info "Mode: Backup only"
+    fi
+    
+    log_info "═══════════════════════════════════════════════════"
+    echo ""
+    
+    # Check if upgrade is needed
+    if [[ "$current_version" == "$TARGET_VERSION" ]] && [[ "$FORCE_UPGRADE" == false ]] && [[ "$BACKUP_ONLY" == false ]]; then
+        log_warn "Already on version $TARGET_VERSION. Use --force to upgrade anyway."
+        exit 0
+    fi
+    
+    # Create backups
+    backup_configurations
+    echo ""
+    
+    if [[ "$BACKUP_ONLY" == true ]]; then
+        log_info "Backup completed. Exiting without upgrade."
+        exit 0
+    fi
+    
+    # Pull Docker images
+    if ! pull_docker_images "$TARGET_VERSION"; then
+        log_error "Failed to pull Docker images. Upgrade aborted."
+        exit 1
+    fi
+    echo ""
+    
+    # Upgrade shared infrastructure
+    if [[ "$SKIP_SHARED" == false ]]; then
+        if ! upgrade_shared_infrastructure "$TARGET_VERSION"; then
+            log_error "Failed to upgrade shared infrastructure. Upgrade aborted."
+            log_info "Restore backups from: $BACKUP_DIR"
+            exit 1
+        fi
+        echo ""
+    else
+        log_info "Skipping shared infrastructure upgrade (--skip-shared)"
+        echo ""
+    fi
+    
+    # Upgrade wikis
+    local wiki_list
+    wiki_list=$(get_wiki_list)
+    local wiki_count
+    wiki_count=$(echo "$wiki_list" | wc -l)
+    local success_count=0
+    local fail_count=0
+    local failed_wikis=()
+    
+    log_info "Found $wiki_count wiki(s) to upgrade"
+    echo ""
+    
+    for wiki_name in $wiki_list; do
+        if upgrade_wiki "$wiki_name" "$TARGET_VERSION"; then
+            success_count=$((success_count + 1))
+        else
+            fail_count=$((fail_count + 1))
+            failed_wikis+=("$wiki_name")
+        fi
+    done
+    
+    # Summary
+    log_info "═══════════════════════════════════════════════════"
+    log_info "Upgrade Summary"
+    log_info "═══════════════════════════════════════════════════"
+    log_info "Successfully upgraded: $success_count wiki(s)"
+    
+    if [[ $fail_count -gt 0 ]]; then
+        log_error "Failed to upgrade: $fail_count wiki(s)"
+        for wiki in "${failed_wikis[@]}"; do
+            log_error "  - $wiki"
+        done
+    fi
+    
+    log_info "Backups saved in: $BACKUP_DIR"
+    log_info ""
+    log_info "To rollback, restore .env files from backup:"
+    log_info "  cp ${BACKUP_DIR}/shared.env.backup ${SHARED_ENV}"
+    log_info "  cp ${BACKUP_DIR}/WIKI_NAME.env.backup ${WIKIS_DIR}/WIKI_NAME/.env"
+    log_info "═══════════════════════════════════════════════════"
+    
+    if [[ $fail_count -gt 0 ]]; then
+        exit 1
+    fi
+}
+
+# Run main function
+main

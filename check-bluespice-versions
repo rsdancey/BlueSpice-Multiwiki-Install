@@ -1,0 +1,184 @@
+#!/bin/bash
+# BlueSpice Version Checker
+# Displays current versions and available updates
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WIKIS_DIR="$(dirname "$SCRIPT_DIR")/wikis"
+SHARED_DIR="${SCRIPT_DIR}/shared"
+SHARED_ENV="${SHARED_DIR}/.shared.env"
+
+# Source logging library
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/lib/logging.sh" 2>/dev/null || true
+
+# Colors
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Get current shared version
+get_shared_version() {
+    if [[ -f "$SHARED_ENV" ]]; then
+        grep "^VERSION=" "$SHARED_ENV" | cut -d'=' -f2
+    else
+        echo "unknown"
+    fi
+}
+
+# Check Docker Hub for available versions
+check_available_versions() {
+    log_info "Checking Docker Hub for available BlueSpice versions..."
+    
+    # Try to get tags from Docker Hub API
+    local tags
+    tags=$(curl -s "https://hub.docker.com/v2/repositories/bluespice/wiki/tags?page_size=20" 2>/dev/null | \
+           grep -oP '"name":\s*"\K[^"]+' | \
+           grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?$' | \
+           sort -V -r | \
+           head -10) || true
+    
+    if [[ -n "$tags" ]]; then
+        echo "$tags"
+    else
+        echo "Unable to fetch from Docker Hub"
+    fi
+}
+
+# Display current installation status
+show_status() {
+    local shared_version
+    shared_version=$(get_shared_version)
+    
+    echo ""
+    echo -e "${BOLD}═══════════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}BlueSpice Installation Status${NC}"
+    echo -e "${BOLD}═══════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    # Shared infrastructure version
+    echo -e "${BOLD}Shared Infrastructure:${NC}"
+    echo "  Version: $shared_version"
+    echo ""
+    
+    # Wiki instances
+    echo -e "${BOLD}Wiki Instances:${NC}"
+    if [[ -d "$WIKIS_DIR" ]]; then
+        local count=0
+        for wiki_dir in "$WIKIS_DIR"/*; do
+            if [[ -d "$wiki_dir" ]] && [[ -f "${wiki_dir}/.env" ]]; then
+                local wiki_name
+                wiki_name=$(basename "$wiki_dir")
+                local wiki_version
+                wiki_version=$(grep "^VERSION=" "${wiki_dir}/.env" 2>/dev/null | cut -d'=' -f2 || echo "unknown")
+                
+                if [[ "$wiki_version" == "$shared_version" ]]; then
+                    echo "  ✓ $wiki_name: $wiki_version"
+                else
+                    echo "  ⚠ $wiki_name: $wiki_version (mismatch!)"
+                fi
+                count=$((count + 1))
+            fi
+        done
+        
+        if [[ $count -eq 0 ]]; then
+            echo "  No wiki instances found"
+        else
+            echo ""
+            echo "  Total: $count wiki(s)"
+        fi
+    else
+        echo "  Wikis directory not found: $WIKIS_DIR"
+    fi
+    
+    echo ""
+    echo -e "${BOLD}═══════════════════════════════════════════════════${NC}"
+}
+
+# Display available versions
+show_available_versions() {
+    echo ""
+    echo -e "${BOLD}Available Versions on Docker Hub:${NC}"
+    echo ""
+    
+    local versions
+    versions=$(check_available_versions)
+    
+    if [[ "$versions" == "Unable to fetch from Docker Hub" ]]; then
+        echo "  Unable to fetch available versions from Docker Hub"
+        echo "  You can check manually at: https://hub.docker.com/r/bluespice/wiki/tags"
+    else
+        local current
+        current=$(get_shared_version)
+        
+        while IFS= read -r version; do
+            if [[ "$version" == "$current" ]]; then
+                echo "  → $version (current)"
+            else
+                echo "    $version"
+            fi
+        done <<< "$versions"
+    fi
+    
+    echo ""
+}
+
+# Display container status
+show_container_status() {
+    echo -e "${BOLD}Container Status:${NC}"
+    echo ""
+    
+    # Check shared services
+    local shared_services=("bluespice-database" "bluespice-search" "bluespice-cache")
+    
+    for service in "${shared_services[@]}"; do
+        if docker ps --format "{{.Names}}" | grep -q "^${service}$"; then
+            local status
+            status=$(docker inspect --format='{{.State.Status}}' "$service" 2>/dev/null || echo "unknown")
+            local health
+            health=$(docker inspect --format='{{.State.Health.Status}}' "$service" 2>/dev/null || echo "no healthcheck")
+            
+            if [[ "$health" == "no healthcheck" ]] || [[ "$health" == "healthy" ]]; then
+                echo "  ✓ $service: $status"
+            else
+                echo "  ⚠ $service: $status (health: $health)"
+            fi
+        else
+            echo "  ✗ $service: not running"
+        fi
+    done
+    
+    echo ""
+    
+    # Check wiki containers
+    local wiki_containers
+    wiki_containers=$(docker ps --filter "label=com.bluespice.type=application" --format "{{.Names}}" 2>/dev/null || true)
+    
+    if [[ -n "$wiki_containers" ]]; then
+        local wiki_count
+        wiki_count=$(echo "$wiki_containers" | wc -l)
+        echo "  Active wiki containers: $wiki_count"
+    else
+        echo "  No active wiki containers found"
+    fi
+    
+    echo ""
+    echo -e "${BOLD}═══════════════════════════════════════════════════${NC}"
+}
+
+# Main
+main() {
+    show_status
+    show_available_versions
+    show_container_status
+    
+    echo ""
+    echo "To upgrade to a new version, run:"
+    echo "  /core/core_install/upgrade-bluespice --version VERSION"
+    echo ""
+    echo "For help:"
+    echo "  /core/core_install/upgrade-bluespice --help"
+    echo ""
+}
+
+main
