@@ -38,7 +38,7 @@ SMTP_USER=""
 SMTP_PASS=""
 
 # Source modular libraries with error checking
-for lib in validation config docker-utils oauth-config init-settings-config logrotate-config; do
+for lib in validation config docker-utils oauth-config init-settings-config logrotate-config search-index; do
     lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -728,6 +728,15 @@ main() {
     fi
 
     docker_exec_safe "$WIKI_NAME" "/app/bin/run-maintenance update.php --quick --doshared"
+
+    # Rebuild search index
+    echo
+    if ! rebuild_search_index "$WIKI_NAME"; then
+        log_warn "Search index rebuild failed - search may not work properly"
+        log_warn "You can manually rebuild it later with:"
+        log_warn "  docker exec --user root bluespice-${WIKI_NAME}-wiki-web sh -lc 'cd /app/bluespice/w && php extensions/BlueSpiceExtendedSearch/maintenance/rebuildIndex.php && php maintenance/runJobs.php'"
+    fi
+    echo
     setup_ssl
     
     # Show completion information
