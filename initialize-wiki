@@ -38,7 +38,7 @@ SMTP_USER=""
 SMTP_PASS=""
 
 # Source modular libraries with error checking
-for lib in validation config docker-utils oauth-config init-settings-config logrotate-config; do
+for lib in validation config docker-utils oauth-config init-settings-config logrotate-config upgrade; do
     lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -589,13 +589,14 @@ main() {
     echo "2) New wiki without SSL (HTTP only)"
     echo "3) Restore from backup"
     echo "4) Restore from backup with images"
+    echo "5) Upgrade all wikis to new version"
     
     local choice=""
-    while [[ ! "$choice" =~ ^[1-4]$ ]]; do
-        printf "Choose option [1/2/3/4]: "
+    while [[ ! "$choice" =~ ^[1-5]$ ]]; do
+        printf "Choose option [1/2/3/4/5]: "
         read -r choice
-        if [[ ! "$choice" =~ ^[1-4]$ ]]; then
-            echo "❌ Please enter 1, 2, 3, or 4"
+        if [[ ! "$choice" =~ ^[1-5]$ ]]; then
+            echo "❌ Please enter 1, 2, 3, 4, or 5"
         fi
     done
     
@@ -639,7 +640,21 @@ main() {
             log_info "Selected backup file: $BACKUP_FILE"
             log_info "Selected images file: $IMAGES_FILE"
             ;;
+        5)
+            SETUP_MODE="upgrade"
+            log_info "Selected: Upgrade all wikis to new version"
+            ;;
     esac
+    
+    # Handle upgrade mode separately
+    if [[ "$SETUP_MODE" == "upgrade" ]]; then
+        if ! interactive_upgrade "$SCRIPT_DIR"; then
+            log_error "System upgrade failed"
+            exit 1
+        fi
+        log_info "✓ System upgrade completed successfully"
+        exit 0
+    fi
     
     # Apply default values and validate configuration
     apply_defaults

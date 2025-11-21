@@ -165,6 +165,23 @@ Restart all services and wiki
 ./bluespice-deploy-wiki --wiki-name=<wiki-name>
 ```
 
+
+### System-Wide Upgrade:
+
+For upgrading all wikis to a new version at once:
+
+```console
+./initialize-wiki
+# Select option 5: Upgrade all wikis to new version
+# Enter the new version number when prompted (e.g., 5.2)
+```
+
+This interactive upgrade process will:
+- Update version configurations in all wiki and template files
+- Pull the new Docker image
+- Run the upgrade pipeline for each wiki
+- Provide a summary of successes and failures
+
 ### Upgrade Pipeline:
 
 # Standard upgrade
