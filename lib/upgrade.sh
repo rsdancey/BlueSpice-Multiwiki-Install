@@ -9,6 +9,38 @@ set -euo pipefail
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/logging.sh"
 
+# Get the latest BlueSpice version from Docker Hub
+get_latest_bluespice_version() {
+    log_info "🔍 Checking for latest BlueSpice version..."
+    
+    # Query Docker Hub API for bluespice/wiki tags
+    local api_url="https://registry.hub.docker.com/v2/repositories/bluespice/wiki/tags?page_size=100"
+    local tags_json
+    
+    if ! tags_json=$(curl -s "$api_url"); then
+        log_error "Failed to fetch version information from Docker Hub"
+        return 1
+    fi
+    
+    # Extract version tags (format: X.Y or X.Y.Z) and find the latest
+    # Filter out 'latest' and other non-version tags, sort, and get the highest version
+    local latest_version
+    latest_version=$(echo "$tags_json" | \
+        grep -oP '"name":\s*"\K[0-9]+\.[0-9]+(\.[0-9]+)?(?=")' | \
+        sort -V | \
+        tail -1)
+    
+    if [[ -z "$latest_version" ]]; then
+        log_error "Could not determine latest version from Docker Hub"
+        return 1
+    fi
+    
+    # Return just the major.minor version (e.g., 5.1 from 5.1.3)
+    # This matches the format used in our configuration files
+    echo "$latest_version" | grep -oP '^[0-9]+\.[0-9]+'
+}
+
+
 # Get list of all wiki directories
 get_all_wikis() {
     local wikis_dir="$1"
@@ -150,7 +182,7 @@ perform_system_upgrade() {
     return 0
 }
 
-# Interactive upgrade - prompts user for version
+# Interactive upgrade - automatically fetches latest version
 interactive_upgrade() {
     local script_dir="$1"
     
@@ -158,27 +190,32 @@ interactive_upgrade() {
     echo "BlueSpice System Upgrade"
     echo "========================"
     echo
-    echo "Current version configuration:"
     
+    # Get current version
+    local current_version=""
     if [[ -f "${script_dir}/.global.env" ]]; then
-        local current_version=$(grep "^VERSION=" "${script_dir}/.global.env" | cut -d= -f2)
-        echo "  Current: ${current_version}"
+        current_version=$(grep "^VERSION=" "${script_dir}/.global.env" | cut -d= -f2)
+        echo "Current version: ${current_version}"
     fi
     
+    # Automatically fetch latest version
+    local new_version
+    if ! new_version=$(get_latest_bluespice_version); then
+        log_error "Failed to determine latest version"
+        return 1
+    fi
+    
+    echo "Latest version: ${new_version}"
     echo
-    printf "Enter new version number (e.g., 5.2): "
-    read -r new_version
     
-    if [[ -z "$new_version" ]]; then
-        log_error "Version number is required"
-        return 1
+    # Check if already up to date
+    if [[ "$current_version" == "$new_version" ]]; then
+        log_info "✓ Already running the latest version (${new_version})"
+        return 0
     fi
     
-    # Validate version format (basic check)
-    if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
-        log_error "Invalid version format. Expected format: X.Y (e.g., 5.2)"
-        return 1
-    fi
+    log_info "Upgrade available: ${current_version} → ${new_version}"
+    echo
     
     perform_system_upgrade "$new_version" "$script_dir"
 }
