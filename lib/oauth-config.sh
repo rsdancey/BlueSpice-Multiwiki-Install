@@ -271,3 +271,87 @@ setup_oauth_extensions() {
     
     return 0
 }
+# Extract OAuth credentials from existing post-init-settings.php
+extract_oauth_credentials_from_container() {
+    local wiki_name="$1"
+    local container_post_init="/data/bluespice/post-init-settings.php"
+    
+    log_info "Extracting existing OAuth credentials from container..."
+    
+    # Check if post-init-settings.php exists in container
+    if ! docker_exec_safe "$wiki_name" "test -f $container_post_init" 2>/dev/null; then
+        log_info "No existing post-init-settings.php found in container"
+        return 1
+    fi
+    
+    # Extract clientID
+    local client_id
+    client_id=$(docker exec "bluespice-${wiki_name}-wiki-web" grep -oP '"clientID"\s*=>\s*"\K[^"]+' "$container_post_init" 2>/dev/null | head -1)
+    
+    # Extract clientSecret
+    local client_secret
+    client_secret=$(docker exec "bluespice-${wiki_name}-wiki-web" grep -oP '"clientSecret"\s*=>\s*"\K[^"]+' "$container_post_init" 2>/dev/null | head -1)
+    
+    if [[ -n "$client_id" ]] && [[ -n "$client_secret" ]]; then
+        log_info "✓ Found existing OAuth credentials in container"
+        echo "$client_id|$client_secret"
+        return 0
+    else
+        log_info "No OAuth credentials found in container post-init-settings.php"
+        return 1
+    fi
+}
+
+# Setup OAuth extensions with automatic credential extraction for upgrades
+setup_oauth_extensions_for_upgrade() {
+    local wiki_name="$1"
+    local wiki_dir="$2"
+    local wiki_domain="$3"
+    
+    log_info "🚀 Starting OAuth extension setup for $wiki_name (upgrade mode)..."
+    
+    # Check if extensions need to be installed
+    if check_auth_extensions_needed "$wiki_name"; then
+        # Install extensions
+        if ! install_auth_extensions "$wiki_name"; then
+            log_error "❌ Failed to install authentication extensions"
+            return 1
+        fi
+        
+        # Configure extension loading
+        if ! add_oauth_extensions_config "$wiki_name" "$wiki_dir"; then
+            log_error "❌ Failed to configure authentication extensions"
+            return 1
+        fi
+        
+        # Try to extract existing OAuth credentials from container
+        local credentials
+        if credentials=$(extract_oauth_credentials_from_container "$wiki_name"); then
+            local client_id
+            local client_secret
+            client_id=$(echo "$credentials" | cut -d'|' -f1)
+            client_secret=$(echo "$credentials" | cut -d'|' -f2)
+            
+            log_info "Using existing OAuth credentials from container configuration"
+            
+            # Add OAuth configuration directly without prompting
+            local local_post_init_file="${wiki_dir}/post-init-settings.php"
+            if ! add_google_oauth_config "$local_post_init_file" "$client_id" "$client_secret"; then
+                log_error "❌ Failed to add OAuth configuration"
+                return 1
+            fi
+            
+            log_info "✅ OAuth extensions configured with existing credentials"
+        else
+            log_warn "⚠ No existing OAuth credentials found - skipping OAuth configuration"
+            log_info "  Extensions are installed but not configured"
+            log_info "  You can configure OAuth manually later if needed"
+        fi
+        
+        log_info "✅ OAuth extension setup completed"
+    else
+        log_info "ℹ️ Authentication extensions already configured"
+    fi
+    
+    return 0
+}

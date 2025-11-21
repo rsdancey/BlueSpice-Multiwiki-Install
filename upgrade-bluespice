@@ -12,7 +12,7 @@ SHARED_ENV="${SHARED_DIR}/.shared.env"
 BACKUP_DIR="/tmp/bluespice-upgrade-$(date +%Y%m%d-%H%M%S)"
 
 # Source required libraries
-for lib in logging.sh docker-utils.sh; do
+for lib in logging.sh docker-utils.sh oauth-config.sh; do
     lib_path="${SCRIPT_DIR}/lib/${lib}"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -263,6 +263,27 @@ upgrade_wiki() {
     else
         log_error "bluespice-deploy-wiki script not found or not executable"
         return 1
+    fi
+    
+    # Load wiki environment to get WIKI_DOMAIN
+    local wiki_domain=""
+    if [[ -f "${wiki_dir}/.env" ]]; then
+        # shellcheck source=/dev/null
+        source "${wiki_dir}/.env" 2>/dev/null || true
+        wiki_domain="${WIKI_HOST:-${VIRTUAL_HOST:-}}"
+    fi
+    
+    # Install and configure OAuth extensions
+    log_info "Setting up OAuth extensions for $wiki_name..."
+    if ! wait_for_container_ready "$wiki_name" 60; then
+        log_warn "Container failed to become ready - OAuth extensions may not install correctly"
+    fi
+    
+    if setup_oauth_extensions_for_upgrade "$wiki_name" "$wiki_dir" "$wiki_domain"; then
+        log_info "✓ OAuth extensions configured for $wiki_name"
+    else
+        log_warn "⚠ OAuth extension setup encountered issues for $wiki_name"
+        log_warn "  Wiki is functional but OAuth authentication may not work"
     fi
     
     log_info "✓ Wiki $wiki_name upgraded successfully"
