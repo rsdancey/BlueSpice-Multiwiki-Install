@@ -168,23 +168,20 @@ Restart all services and wiki
 
 ### System-Wide Upgrade:
 
-For upgrading all wikis to the latest version at once:
+For upgrading all wikis to a new version at once:
 
 ```console
 ./initialize-wiki
 # Select option 5: Upgrade all wikis to new version
+# Enter the new version number when prompted (e.g., 5.2)
 ```
 
 This interactive upgrade process will:
-- Automatically detect the latest BlueSpice version from Docker Hub
-- Show current and latest versions
-- Skip upgrade if already on the latest version
 - Update version configurations in all wiki and template files
 - Pull the new Docker image
 - Run the upgrade pipeline for each wiki
 - Provide a summary of successes and failures
 
-### Upgrade Pipeline:
 ### Upgrade Pipeline:
 
 # Standard upgrade
