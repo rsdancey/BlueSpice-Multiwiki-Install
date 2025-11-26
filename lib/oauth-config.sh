@@ -253,10 +253,6 @@ setup_oauth_extensions() {
         fi
         
         # Configure extension loading
-        if ! add_oauth_extensions_config "$wiki_name" "$wiki_dir"; then
-            log_error "❌ Failed to configure authentication extensions"
-            return 1
-        fi
         
         # Configure OAuth settings
         if ! setup_interactive_oauth_config "$wiki_name" "$wiki_domain"; then
@@ -319,10 +315,6 @@ setup_oauth_extensions_for_upgrade() {
         fi
         
         # Configure extension loading
-        if ! add_oauth_extensions_config "$wiki_name" "$wiki_dir"; then
-            log_error "❌ Failed to configure authentication extensions"
-            return 1
-        fi
         
         # Try to extract existing OAuth credentials from container
         local credentials
@@ -336,10 +328,6 @@ setup_oauth_extensions_for_upgrade() {
             
             # Add OAuth configuration directly without prompting
             local local_post_init_file="${wiki_dir}/post-init-settings.php"
-            if ! add_google_oauth_config "$local_post_init_file" "$client_id" "$client_secret"; then
-                log_error "❌ Failed to add OAuth configuration"
-                return 1
-            fi
             
             log_info "✅ OAuth extensions configured with existing credentials"
         else

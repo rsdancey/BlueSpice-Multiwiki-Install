@@ -182,7 +182,7 @@ DB_PASS=$db_password
 DB_ROOT_PASS=$db_root_password
 
 # Version and Edition
-VERSION=5.1
+VERSION=$($SCRIPT_DIR/lib/get-latest-bluespice-version.sh)
 EDITION=free
 
 # Service Repository (needed for docker-compose)

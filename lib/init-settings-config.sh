@@ -53,60 +53,49 @@ create_post_init_settings() {
     local wiki_name="$2"
     local post_init_file="${wiki_dir}/post-init-settings.php"
     
-    log_info "Creating post-init-settings.php with base configuration..."
+    log_info "Creating post-init-settings.php with guarded auth extension loading..."
     log_info "Wiki dir: $wiki_dir"
-    log_info "Pre-init file path: $post_init_file"
+    log_info "Post-init file path: $post_init_file"
     
-    cat > "$post_init_file" << POSTINIT_BASE_EOF
-<?php
-
-# Set a useable /tmp directory
-\$GLOBALS['mwsgRunJobsTriggerRunnerWorkingDir'] = '/tmp/${wiki_name}';
-
-# Override the default with a bundle of filetypes:
-\$wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
-'psd', 'mp3', 'xls', 'xlsx', 'doc','docx', 'mp4', 'mov', 'ico' );
-
-\$wgCookieExpiration = 86400;
-\$wgExtendedLoginCookieExpiration = null;
-
-# May lock session value for 8 hours we'll see                                                                                        
-\$wgObjectCacheSessionExpiry = 28800;     
-
-# sets a tmp directory other than the default                                                                                         
-\$wgTmpDirectory = "/tmp/${wiki_name}";     
-
-# BlueSpice Extended Search Backend Configuration                                                                                     
-\$GLOBALS["bsgESBackendHost"] = "bluespice-search";                                                                                    
-\$GLOBALS["bsgESBackendPort"] = "9200";                                                                                                
-\$GLOBALS["bsgESBackendTransport"] = "http";                                                                                           
-\$GLOBALS["bsgESBackendUsername"] = "";                                                                                                
-\$GLOBALS["bsgESBackendPassword"] = "";  
-
-# Whitelist some pages                                                                                                                
-\$wgWhitelistRead = [                                                                                                                  
-    'Privacy Policy',                                                                                                                 
-    'Special:Login',                                                                                                                  
-    'Special:CreateAccount',                                                                                                          
-    'Special:CreateAccount/return'                                                                                                    
-];   
-
-# add a function to autoadd new users to basic groups                                                                                 
-# NOTE: Comment this out if you want the public to read and not edit
-    \$wgHooks['LocalUserCreated'][] = function ( User \$user, \$autocreated ) {
-    \$services = MediaWiki\\MediaWikiServices::getInstance();
-    \$userGroupManager = \$services->getUserGroupManager();
-    \$userGroupManager->addUserToGroup( \$user, 'editor' );
-    \$userGroupManager->addUserToGroup( \$user, 'reviewer' );
-};       
-
-# Post-initialization settings
-# Additional configurations will be appended below
-POSTINIT_BASE_EOF
+    # Use the complete template with guarded auth extension loading
+    # This template includes /tmp/wiki standardization and CLI-aware auth loading
+    if [ ! -f "/core/core_install/templates/post-init-settings-template.php" ]; then
+        log_error "Template file not found: /core/core_install/templates/post-init-settings-template.php"
+        return 1
+    fi
     
+    cp /core/core_install/templates/post-init-settings-template.php "$post_init_file"
+    
+    if [ $? -ne 0 ]; then
+        log_error "Failed to copy post-init-settings template"
+        return 1
+    fi
+    
+    # Read SMTP settings from .env and substitute placeholders
+    local env_file="${wiki_dir}/.env"
+    if [ -f "$env_file" ]; then
+        local smtp_host smtp_port smtp_user smtp_pass wiki_host
+        smtp_host=$(grep "^SMTP_HOST=" "$env_file" | cut -d= -f2 || echo "mail.google.com")
+        smtp_port=$(grep "^SMTP_PORT=" "$env_file" | cut -d= -f2 || echo "587")
+        smtp_user=$(grep "^SMTP_USER=" "$env_file" | cut -d= -f2 || echo "alderacwiki@alderac.com")
+        smtp_pass=$(grep "^SMTP_PASS=" "$env_file" | cut -d= -f2 || echo "")
+        wiki_host=$(grep "^WIKI_HOST=" "$env_file" | cut -d= -f2 || echo "wiki.alderac.com")
+        
+        # Substitute placeholders in post-init-settings.php
+        sed -i "s/{{SMTP_HOST}}/$smtp_host/g" "$post_init_file"
+        sed -i "s/{{SMTP_PORT}}/$smtp_port/g" "$post_init_file"
+        sed -i "s/{{SMTP_USER}}/$smtp_user/g" "$post_init_file"
+        sed -i "s/{{SMTP_PASS}}/$smtp_pass/g" "$post_init_file"
+        sed -i "s/{{WIKI_HOST}}/$wiki_host/g" "$post_init_file"
+        
+        log_info "SMTP settings substituted from .env file"
+    else
+        log_warn ".env file not found - using default SMTP placeholders"
+    fi
+    
+    log_info "Successfully created post-init-settings.php from template"
     return 0
 }
-
 # Add SMTP configuration to post-init-settings.php
 add_smtp_configuration() {
     local wiki_dir="$1"
@@ -307,22 +296,6 @@ create-init-settings-config-files() {
         return 1
     fi
     
-    # Read SMTP settings from .env file and add SMTP configuration
-    if [[ -f "$env_file" ]]; then
-        local smtp_host smtp_port smtp_user smtp_pass smtp_idhost
-        smtp_host=$(grep "^SMTP_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-        smtp_port=$(grep "^SMTP_PORT=" "$env_file" | cut -d= -f2 2>/dev/null || echo "587")
-        smtp_user=$(grep "^SMTP_USER=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-        smtp_pass=$(grep "^SMTP_PASS=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-        smtp_idhost=$(grep "^WIKI_HOST=" "$env_file" | cut -d= -f2 2>/dev/null || echo "")
-        
-        if ! add_smtp_configuration "$wiki_dir" "$smtp_host" "$smtp_port" "$smtp_user" "$smtp_pass" "$smtp_idhost"; then
-            log_warn "Failed to add SMTP configuration"
-        fi
-    else
-        log_warn ".env file not found - skipping SMTP configuration"
-    fi
-    
     log_info "MediaWiki configuration files created successfully"
     return 0
 }
@@ -412,10 +385,6 @@ setup_interactive_oauth_config() {
         local wiki_dir="${wikis_dir}/${wiki_name}"
         local local_post_init_file="${wiki_dir}/post-init-settings.php"
         
-        if ! add_google_oauth_config "$local_post_init_file" "$oauth_client_id" "$oauth_client_secret"; then
-            echo "❌ Failed to add OAuth configuration" >&2
-            return 1
-        fi
             
         # Store OAuth settings in .env file for reference
         local env_file="${wikis_dir}/${wiki_name}/.env"
@@ -433,10 +402,6 @@ setup_interactive_oauth_config() {
         local wiki_dir="${wikis_dir}/${wiki_name}"
         local local_post_init_file="${wiki_dir}/post-init-settings.php"
         
-        if ! add_oauth_placeholder_config "$local_post_init_file"; then
-            echo "❌ Failed to add OAuth placeholder configuration" >&2
-            return 1
-        fi
     fi
     
     return 0
