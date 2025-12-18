@@ -26,7 +26,7 @@ rebuild_search_index() {
     # Run search index rebuild inside the web container
     local container_name
     container_name=$(get_container_name "$wiki_name")
-    container_name="${container_name}-wiki-web"
+    # container_name already includes -wiki-web from get_container_name
     
     if ! docker exec --user root "$container_name" sh -lc '
         set -e
