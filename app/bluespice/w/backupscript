@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Exit on any error
+set -e
+
+# Configuration - make these configurable
+BACKUP_DIR="${BACKUP_DIR:-/home/$(whoami)/backups}"
+WIKI_DIR="${WIKI_DIR:-/app/bluespice/w}"
+DAYS_TO_KEEP="${DAYS_TO_KEEP:-7}"
+
+
+#fn for logging
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+# Check if wiki directory exists
+if [ ! -d "$WIKI_DIR" ]; then
+    log "ERROR: Wiki directory '$WIKI_DIR' does not exist"
+    exit 1
+fi
+
+# Create backup directory if it doesn't exist
+if ! mkdir -p "$BACKUP_DIR"; then
+    log "ERROR: Cannot create backup directory '$BACKUP_DIR'"
+    exit 1
+fi
+
+# Generate timestamp for backup file
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="$BACKUP_DIR/wiki_backup_$TIMESTAMP.tar.gz"
+
+# Find files modified in the last 24 hours
+log "Creating backup of files modified in last 24 hours..."
+find "$WIKI_DIR" -type f -mtime -1 | tar czf "$BACKUP_FILE" -T -
+
+# Display backup size
+if [ -f "$BACKUP_FILE" ]; then
+    SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+    log "Backup created: $BACKUP_FILE (Size: $SIZE)"
+fi
+
+# Keep only last N days of backups
+log "Cleaning up old backups (keeping last $DAYS_TO_KEEP days)..."
+find "$BACKUP_DIR" -type f -name "wiki_backup_*.tar.gz" -mtime +$DAYS_TO_KEEP -exec rm {} \;
+
+log "Backup process completed successfully"
