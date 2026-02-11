@@ -83,6 +83,7 @@ services:
     volumes:
       - ${DATA_DIR}/database/logs:/config/log/mysql
       - ${DATA_DIR}/database/data:/config/databases
+      - ./mariadb-custom.cnf:/config/custom.cnf:ro
     environment:
       - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
       - MYSQL_RANDOM_ROOT_PASSWORD=no
