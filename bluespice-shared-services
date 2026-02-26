@@ -27,7 +27,7 @@ source_environment() {
     # Set defaults
     export VERSION="${VERSION:-5.1}"
     export EDITION="${EDITION:-free}"
-    export BLUESPICE_SERVICE_REPOSITORY="${BLUESPICE_SERVICE_REPOSITORY:-docker.bluespice.com/bluespice}"
+    export BLUESPICE_SERVICE_REPOSITORY="${BLUESPICE_SERVICE_REPOSITORY:-bluespice}"
 }
 
 # Build compose file arguments

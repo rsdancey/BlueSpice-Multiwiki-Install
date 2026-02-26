@@ -5,8 +5,9 @@
 # This template should be copied to /bluespice/<wiki-name>/post-init-settings.php
 # when creating a new wiki instance.
 #
-# IMPORTANT: Auth extension loading is guarded to prevent task runner crashes
-# when PluggableAuth/OpenIDConnect are not present in task containers.
+# Auth extensions are loaded only when their directories exist (is_dir check).
+# This safely handles task containers that lack the extensions, and also
+# allows update.php to see the schema so DB tables are created automatically.
 
 # Set a useable /tmp directory
 # $GLOBALS['mwsgRunJobsTriggerRunnerWorkingDir'] = '/tmp/wiki';
@@ -73,59 +74,43 @@ $wgSMTP = [
 # ============================================
 # OAuth Extensions Loading
 # ============================================
-# IMPORTANT: These guards prevent fatal errors in task containers
-# where PluggableAuth/OpenIDConnect extensions may not exist.
-# DO NOT REMOVE THESE GUARDS!
+# is_dir() checks safely handle task containers where extensions may not exist,
+# and allow update.php to create required DB tables during initialization.
 
-# Load auth extensions only in web context and if they exist
-$loadAuth = ( PHP_SAPI !== 'cli' );
 $pluggableAuthPath = '/app/bluespice/w/extensions/PluggableAuth';
 $openIDConnectPath = '/app/bluespice/w/extensions/OpenIDConnect';
 
-if ( $loadAuth && is_dir( $pluggableAuthPath ) ) {
+if ( is_dir( $pluggableAuthPath ) ) {
     wfLoadExtension( 'PluggableAuth' );
 }
 
-if ( $loadAuth && is_dir( $openIDConnectPath ) ) {
+if ( is_dir( $openIDConnectPath ) ) {
     wfLoadExtension( 'OpenIDConnect' );
 }
 
 # ============================================
 # Google OAuth Configuration
 # ============================================
+# Provider credentials are configured via BlueSpice ConfigManager UI
+# (stored in bs_settings3 DB table as DistributionConnectorPluggableAuthConfig).
+# Do not set $wgPluggableAuth_Config here - it conflicts with the DB config.
 
-# Google OAuth configuration - only if PluggableAuth is loaded
-if ( $loadAuth && is_dir( $pluggableAuthPath ) ) {
-    $wgPluggableAuth_Config["Google"] = [
-        "plugin" => "OpenIDConnect",
-        "data" => [
-            "providerURL" => "https://accounts.google.com/.well-known/openid-configuration",
-            "clientID" => "{{OAUTH_CLIENT_ID}}",
-            "clientSecret" => "{{OAUTH_CLIENT_SECRET}}",
-            "scope" => ["openid", "email", "profile"],
-            "email_key" => "email",
-            "use_email_mapping" => true
-        ],
-        "buttonLabelMessage" => "Login with Google"
-    ];
-
-    # Enable local login alongside PluggableAuth
+if ( is_dir( $pluggableAuthPath ) ) {
+    # Enable local login alongside SSO so admins can always log in
     $wgPluggableAuth_EnableLocalLogin = true;
     $wgPluggableAuth_EnableAutoLogin = false;
 
-    # OAuth email matching and account creation settings
-    # These settings restrict the ability of a user to self-create an account by authenticating via google
-    $wgOpenIDConnect_MigrateUsers = false;  
-    $wgGroupPermissions['*']['autocreateaccount'] = false;
+    # autocreateaccount must be true for PluggableAuth to link SSO sessions to local accounts
+    $wgGroupPermissions['*']['autocreateaccount'] = true;
+    # Prevent manual self-registration via Special:CreateAccount
     $wgGroupPermissions['*']['createaccount'] = false;
 
-    # Essential settings to prevent pluggableauth-fatal-error
     $wgPluggableAuth_EnableLocalProperties = true;
     $wgPluggableAuth_EnableLocalUsers = true;
 
-    # OpenIDConnect specific settings for proper user mapping
-    $wgOpenIDConnect_UseEmailNameAsUserName = false;
+    # Match SSO logins to existing accounts by email address
     $wgOpenIDConnect_MigrateUsersByEmail = true;
+    $wgOpenIDConnect_UseEmailNameAsUserName = false;
     $wgOpenIDConnect_UseRealNameAsUserName = false;
     $wgOpenIDConnect_ForceLogout = false;
 }
