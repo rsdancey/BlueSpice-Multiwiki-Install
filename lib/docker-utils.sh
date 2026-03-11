@@ -53,13 +53,15 @@ wait_for_container_ready() {
     return 1
 }
 
-# Check if container is running
+# Check if container is running (not restarting/stopped)
 is_container_running() {
     local wiki_name="$1"
     local container_name
     container_name=$(get_container_name "$wiki_name")
-    
-    docker ps --filter name="$container_name" --format "{{.Names}}" | grep -q "^${container_name}$"
+
+    local state
+    state=$(docker inspect --format='{{.State.Status}}' "$container_name" 2>/dev/null || echo "missing")
+    [[ "$state" == "running" ]]
 }
 
 # Execute command in container with error checking

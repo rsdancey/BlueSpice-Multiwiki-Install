@@ -41,6 +41,18 @@ ADMIN_MAIL=${NEW_EMAIL:-$CURRENT_EMAIL}
 
 echo "Using admin mail: $ADMIN_MAIL"
 
+# Ensure DATA_DIR is set
+CURRENT_DATA_DIR="${DATA_DIR:-/bluespice}"
+read -r -p "Enter data directory (press Enter to use existing: $CURRENT_DATA_DIR): " NEW_DATA_DIR
+DATA_DIR="${NEW_DATA_DIR:-$CURRENT_DATA_DIR}"
+echo "Using data directory: $DATA_DIR"
+
+# Ensure DB_ROOT_PASS is set
+if [[ -z "${DB_ROOT_PASS:-}" ]]; then
+    DB_ROOT_PASS="$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)"
+    echo "Generated new database root password."
+fi
+
 # Ensure a host-side directory exists with correct group and permissions
 ensure_host_dir_permissions() {
     local path="$1"
@@ -76,13 +88,21 @@ prepare_shared_data_dirs() {
 prepare_shared_data_dirs
 
 # Update environment file if needed
-if [[ -f "$SHARED_ENV" ]] && grep -q "ADMIN_MAIL=" "$SHARED_ENV"; then
-    sed -i "s/^ADMIN_MAIL=.*/ADMIN_MAIL=${ADMIN_MAIL}/" "$SHARED_ENV"
-else
-    echo "ADMIN_MAIL=${ADMIN_MAIL}" >> "$SHARED_ENV"
-fi
+update_or_append_env() {
+    local key="$1"
+    local value="$2"
+    if grep -q "^${key}=" "$SHARED_ENV" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$SHARED_ENV"
+    else
+        echo "${key}=${value}" >> "$SHARED_ENV"
+    fi
+}
 
-echo -e "${GREEN}✓ Email configuration updated${NC}"
+update_or_append_env "ADMIN_MAIL" "$ADMIN_MAIL"
+update_or_append_env "DATA_DIR" "$DATA_DIR"
+update_or_append_env "DB_ROOT_PASS" "$DB_ROOT_PASS"
+
+echo -e "${GREEN}✓ Environment configuration updated${NC}"
 echo
 
 # Change to shared directory and start services

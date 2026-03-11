@@ -21,11 +21,15 @@ services:
     entrypoint: ["/scripts/start-web-wrapper.sh"]
     networks:
       - bluespice-network
+    tmpfs:
+      - /tmp/wiki:uid=1002,gid=1002
     volumes:
       - /opt/bluespice/scripts:/scripts:ro
       - ${DATA_DIR}/${WIKI_NAME}:/data/bluespice
+      - ${DATA_DIR}/${WIKI_NAME}/simplesamlphp:/data/simplesamlphp
     environment:
       - WIKI_NAME=${WIKI_NAME}
+      - DB_TYPE=mysql
       - DB_NAME=${DB_NAME}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -39,6 +43,8 @@ services:
       - WIKI_PROTOCOL=https
       - WIKI_SERVER=https://${WIKI_HOST}
       - DATADIR=/data/bluespice
+      - WIKI_PRE_INIT_SETTINGS_FILE=/data/bluespice/pre-init-settings.php
+      - WIKI_POST_INIT_SETTINGS_FILE=/data/bluespice/post-init-settings.php
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-web"
@@ -53,6 +59,7 @@ services:
     command: ["--runAll"]
     environment:
       - WIKI_NAME=${WIKI_NAME}
+      - DB_TYPE=mysql
       - DB_NAME=${DB_NAME}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -63,11 +70,16 @@ services:
       - WIKI_PROTOCOL=https
       - WIKI_SERVER=https://${WIKI_HOST}
       - DATADIR=/data/bluespice
+      - WIKI_PRE_INIT_SETTINGS_FILE=/data/bluespice/pre-init-settings.php
+      - WIKI_POST_INIT_SETTINGS_FILE=/data/bluespice/post-init-settings.php
     networks:
       - bluespice-network
+    tmpfs:
+      - /data:uid=1002,gid=1002
     volumes:
       - /opt/bluespice/scripts:/scripts:ro
       - ${DATA_DIR}/${WIKI_NAME}:/data/bluespice
+      - ${DATA_DIR}/${WIKI_NAME}/simplesamlphp:/data/simplesamlphp
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-task"

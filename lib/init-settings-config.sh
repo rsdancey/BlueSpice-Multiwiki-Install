@@ -64,9 +64,7 @@ create_post_init_settings() {
         return 1
     fi
     
-    cp /core/core_install/templates/post-init-settings-template.php "$post_init_file"
-    
-    if [ $? -ne 0 ]; then
+    if ! cp /core/core_install/templates/post-init-settings-template.php "$post_init_file"; then
         log_error "Failed to copy post-init-settings template"
         return 1
     fi
@@ -96,192 +94,12 @@ create_post_init_settings() {
     log_info "Successfully created post-init-settings.php from template"
     return 0
 }
-# Add SMTP configuration to post-init-settings.php
-add_smtp_configuration() {
-    local wiki_dir="$1"
-    local smtp_host="$2"
-    local smtp_port="$3"
-    local smtp_user="$4"
-    local smtp_pass="$5"
-    local smtp_idhost="$6"
-    local post_init_file="${wiki_dir}/post-init-settings.php"
-    
-    if [[ -z "$smtp_host" || -z "$smtp_user" || -z "$smtp_pass" ]]; then
-        log_warn "SMTP configuration incomplete - skipping SMTP setup"
-        return 0
-    fi
-    
-    log_info "Adding SMTP configuration to post-init-settings.php..."
-    
-    cat >> "$post_init_file" << SMTP_CONFIG_EOF
-
-# ============================================
-# SMTP Email Configuration
-# ============================================
-
-# Email configuration
-\$wgPasswordSender = '$smtp_user';
-\$wgEmergencyContact = '$smtp_user';
-\$wgNoReplyAddress = '$smtp_user';
-
-# SMTP configuration
-\$wgSMTP = [
-    'host'     => '$smtp_host',
-    'IDHost'   => '$smtp_idhost',
-    'port'     => $smtp_port,
-    'auth'     => true,
-    'username' => '$smtp_user',
-    'password' => '$smtp_pass'
-];
-SMTP_CONFIG_EOF
-    
-    return 0
-}
-
-# Add OAuth extension loading configuration
-add_oauth_extensions_config() {
-    local wiki_name="$1"
-    local wiki_dir="$2"
-    local post_init_file="${wiki_dir}/post-init-settings.php"
-
-        
-    log_info "Adding OAuth extension loading configuration..."
-    
-    cat >> "$post_init_file" << 'AUTH_EXTENSIONS_EOF'
-
-# ============================================
-# OAuth Extensions Loading
-# ============================================
-
-# Load web-only auth integrations (skip for CLI/maintenance)
-#if ( !isset($wgCommandLineMode) || !$wgCommandLineMode ) {
-    wfLoadExtension( 'PluggableAuth' );
-    
-    # Ensure OpenIDConnect has its dependencies before loading
-#    $openIDConnectPath = $IP . "/extensions/OpenIDConnect";
-#    if ( file_exists( $openIDConnectPath . "/vendor/autoload.php" ) ) {
-#        require_once $openIDConnectPath . "/vendor/autoload.php";
-#    } elseif ( file_exists( $openIDConnectPath . "/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php" ) ) {
-#        require_once $openIDConnectPath . "/vendor/jumbojett/openid-connect-php/src/OpenIDConnectClient.php";
-#    }
-    
-    wfLoadExtension( 'OpenIDConnect' );
-#}
-AUTH_EXTENSIONS_EOF
-    
-    return 0
-}
-
-# Add Google OAuth configuration
-add_google_oauth_config() {
-    local post_init_file="$1"
-    local oauth_client_id="$2"
-    local oauth_client_secret="$3"
-    
-    log_info "Adding Google OAuth configuration..."
-    
-    cat >> "$post_init_file" << OAUTH_CONFIG_EOF
-
-# ============================================
-# Google OAuth Configuration
-# ============================================
-
-# Google OAuth configuration
-\$wgPluggableAuth_Config["Google"] = [
-    "plugin" => "OpenIDConnect",
-    "data" => [
-        "providerURL" => "https://accounts.google.com/.well-known/openid-configuration",
-        "clientID" => "${oauth_client_id}",
-        "clientSecret" => "${oauth_client_secret}",
-        "scope" => ["openid", "email", "profile"],
-        "email_key" => "email",
-        "use_email_mapping" => true
-    ],
-    "buttonLabelMessage" => "Login with Google"
-];
-
-# Enable local login alongside PluggableAuth
-\$wgPluggableAuth_EnableLocalLogin = true;
-\$wgPluggableAuth_EnableAutoLogin = false;
-
-# OAuth email matching and account creation settings
-# These settings restrict the ability of a user to self-create an account by authenticating via google
-\$wgOpenIDConnect_MigrateUsers = false;  
-\$wgGroupPermissions['*']['autocreateaccount'] = true;  # Required by PluggableAuth
-\$wgGroupPermissions['*']['createaccount'] = false;
-
-# Essential settings to prevent pluggableauth-fatal-error
-\$wgPluggableAuth_EnableLocalProperties = true;
-\$wgPluggableAuth_EnableLocalUsers = true;
-
-# OpenIDConnect specific settings for proper user mapping
-\$wgOpenIDConnect_UseEmailNameAsUserName = false;
-\$wgOpenIDConnect_MigrateUsersByEmail = true;
-\$wgOpenIDConnect_UseRealNameAsUserName = false;
-\$wgOpenIDConnect_ForceLogout = false;
-
-OAUTH_CONFIG_EOF
-    
-    return 0
-}
-
-# Add OAuth placeholder configuration
-add_oauth_placeholder_config() {
-    local post_init_file="$1"
-    
-    log_info "Adding OAuth placeholder configuration..."
-    
-    cat >> "$post_init_file" << 'OAUTH_PLACEHOLDER_EOF'
-
-# ============================================
-# Google OAuth Configuration (Must be manually configured)
-# ============================================
-# To enable Google OAuth login:
-# 1. Get credentials from https://console.cloud.google.com
-# 2. Uncomment and update the configuration below
-# 3. Add redirect URI: https://YOUR-DOMAIN/index.php/Special:PluggableAuthLogin
-
-/*
-
-\$wgPluggableAuth_Config["Google"] = [
-    "plugin" => "OpenIDConnect",
-    "data" => [
-        "providerURL" => "https://accounts.google.com/.well-known/openid-configuration",
-        "clientID" => "YOUR_GOOGLE_CLIENT_ID",
-        "clientSecret" => "YOUR_GOOGLE_CLIENT_SECRET",
-        "scope" => ["openid", "email", "profile"],
-        "email_key" => "email",
-        "use_email_mapping" => true
-    ],
-    "buttonLabelMessage" => "Login with Google"
-];
-
-# Enable local login alongside PluggableAuth
-\$wgPluggableAuth_EnableLocalLogin = true;
-\$wgPluggableAuth_EnableAutoLogin = false;
-
-# OAuth email matching and account creation settings
-# These settings restrict the ability of a user to self-create an account by authenticating via google
-\$wgOpenIDConnect_MigrateUsers = false;  
-\$wgGroupPermissions['*']['autocreateaccount'] = true;  # Required by PluggableAuth
-\$wgGroupPermissions['*']['createaccount'] = false;
-
-# Additional OpenIDConnect settings
-\$wgOpenIDConnect_UseEmailNameAsUserName = false;
-\$wgOpenIDConnect_MigrateUsersByEmail = true;
-\$wgOpenIDConnect_UseRealNameAsUserName = false;
-*/
-OAUTH_PLACEHOLDER_EOF
-    
-    return 0
-}
 
 # Main function to create complete MediaWiki configuration files
 create-init-settings-config-files() {
     local wiki_dir="$1"
     local wiki_name="$2"
-    local env_file="${wiki_dir}/.env"
-    
+
     log_info "Creating MediaWiki configuration files..."
     
     # Create pre-init-settings.php
@@ -342,67 +160,42 @@ copy_config_files_to_container() {
 setup_interactive_oauth_config() {
     local wiki_name="$1"
     local wiki_domain="$2"
-    
-    echo ""
-    echo "==================================================================="
-    echo "Google OAuth Configuration (Optional)"
-    echo "==================================================================="
-    echo ""
-    echo "To enable 'Login with Google' functionality, you need to:"
-    echo "1. Create a Google Cloud project at https://console.cloud.google.com"
-    echo "2. Enable Google Auth Platform"
-    echo "3. Create OAuth 2.0 credentials in Clients as a Client ID for Web Application"
-    echo "4. In Clients setup use this as authorized redirect URI:"
-    echo "   https://${wiki_domain}/index.php/Special:PluggableAuthLogin"
-    echo ""
-    
-    printf "Do you want to configure Google OAuth now? [y/N]: "
-    read -r configure_oauth
-    
-    if [[ "${configure_oauth,,}" == "y" ]]; then
-        # Get OAuth credentials
-        printf "Enter Google OAuth Client ID: "
-        read -r oauth_client_id
-        
-        while [[ -z "$oauth_client_id" ]]; do
-                echo "Client ID is required"
-                printf "Enter Google OAuth Client ID: "
-                read -r oauth_client_id
-            done
 
-        printf "Enter Google OAuth Client Secret: "
-        read -r oauth_client_secret
-            
-        while [[ -z "$oauth_client_secret" ]]; do
-            echo "Client Secret is required when Client ID is provided"
-            printf "Enter Google OAuth Client Secret: "
-            read -r oauth_client_secret
-        done
-            
-        # Add Google OAuth configuration using the centralized function
-        local wikis_dir
-        wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
-        local wiki_dir="${wikis_dir}/${wiki_name}"
-        local local_post_init_file="${wiki_dir}/post-init-settings.php"
-        
-            
-        # Store OAuth settings in .env file for reference
-        local env_file="${wikis_dir}/${wiki_name}/.env"
-        {
-            echo ""
-            echo "# Google OAuth Settings"
-            echo "OAUTH_CLIENT_ID=${oauth_client_id}"
-            echo "OAUTH_CLIENT_SECRET=${oauth_client_secret}"
-        } >> "$env_file"
-    else
+    echo ""
+    echo "==================================================================="
+    echo "Google OAuth / SSO Configuration (Optional)"
+    echo "==================================================================="
+    echo ""
+    printf "Do you want to enable Google OAuth (Login with Google)? [y/N]: "
+    read -r configure_oauth
+
+    if [[ "${configure_oauth,,}" != "y" ]]; then
         log_info "OAuth configuration skipped"
-        # Add placeholder configuration using the centralized function
-        local wikis_dir
-        wikis_dir="$(dirname "${SCRIPT_DIR}")/wikis"
-        local wiki_dir="${wikis_dir}/${wiki_name}"
-        local local_post_init_file="${wiki_dir}/post-init-settings.php"
-        
+        return 0
     fi
-    
+
+    echo ""
+    echo "OAuth extensions have been installed. To complete setup:"
+    echo ""
+    echo "Step 1 — Create Google OAuth credentials:"
+    echo "  1. Go to https://console.cloud.google.com"
+    echo "  2. Create or select a project, then enable Google Auth Platform"
+    echo "  3. Create OAuth 2.0 credentials (Web Application type)"
+    echo "  4. Add this Authorized Redirect URI:"
+    echo "     https://${wiki_domain}/index.php/Special:PluggableAuthLogin"
+    echo ""
+    echo "Step 2 — Enter credentials in BlueSpice ConfigManager:"
+    echo "  1. Log in to the wiki as an admin"
+    echo "  2. Go to Special:BluespiceConfigManager"
+    echo "  3. Find 'PluggableAuth' settings and enter:"
+    echo "       Issuer URL : https://accounts.google.com"
+    echo "       Client ID  : (from Google Cloud Console)"
+    echo "       Client Secret : (from Google Cloud Console)"
+    echo "  4. Save the configuration"
+    echo ""
+    echo "These values are stored in the BlueSpice database — do not add them"
+    echo "to post-init-settings.php or they will conflict with the DB config."
+    echo ""
+
     return 0
 }

@@ -1,29 +1,13 @@
 #!/bin/bash
 
-# Source logging functions
+# Images Import Script for BlueSpice Wiki
+# Handles ownership issues by fixing permissions on the host side before container copy
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/logging.sh"
-
-# Images Import Script for BlueSpice Wiki (Version 2)
-# Fixes ownership issues by handling permissions on host side
-
-# Color codes for output
-# shellcheck disable=SC2034  # Colors may be used by sourced logging functions
-RED='\033[0;31m'
-# shellcheck disable=SC2034
-GREEN='\033[0;32m'
-# shellcheck disable=SC2034
-YELLOW='\033[1;33m'
-# shellcheck disable=SC2034
-BLUE='\033[0;34m'
-# shellcheck disable=SC2034
-NC='\033[0m' # No Color
-
-# Function to print colored messages
-
-
-
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/docker-utils.sh"
 
 # Function to display usage
 usage() {
