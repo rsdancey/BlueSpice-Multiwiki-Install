@@ -31,6 +31,7 @@ Upgrade BlueSpice multi-wiki installation to a new version.
 
 OPTIONS:
     -v, --version VERSION    Target version to upgrade to (e.g., 5.1.3)
+                             (optional: auto-detected from Docker Hub if omitted)
     -f, --force              Force upgrade even if already on target version
     -w, --wiki-only WIKI     Upgrade only specific wiki instance
     -s, --skip-shared        Skip shared infrastructure upgrade
@@ -38,7 +39,10 @@ OPTIONS:
     -h, --help               Show this help message
 
 EXAMPLES:
-    # Upgrade all wikis to version 5.1.3
+    # Upgrade all wikis to latest auto-detected version
+    $0
+    
+    # Upgrade all wikis to a specific version
     $0 --version 5.1.3
     
     # Upgrade only a specific wiki
@@ -93,10 +97,31 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate target version is specified (unless backup-only)
+# Detect latest BlueSpice version from Docker Hub
+detect_latest_bluespice_version() {
+    local api_url="https://hub.docker.com/v2/repositories/bluespice/wiki/tags/?page_size=100&ordering=last_updated"
+    local response
+    response=$(curl -sf "$api_url" 2>/dev/null) || {
+        log_warn "Could not query Docker Hub for latest version"
+        return 1
+    }
+    local latest_version
+    latest_version=$(echo "$response" | grep -oP '"name":\s*"\K[0-9]+\.[0-9]+\.[0-9]+(?=")' | sort -V | tail -1)
+    if [[ -z "$latest_version" ]]; then
+        log_warn "Could not determine latest BlueSpice version from Docker Hub"
+        return 1
+    fi
+    echo "$latest_version"
+}
+
+# Validate target version is specified (unless backup-only); auto-detect if omitted
 if [[ -z "$TARGET_VERSION" ]] && [[ "$BACKUP_ONLY" == false ]]; then
-    log_error "Target version is required. Use --version VERSION"
-    usage
+    log_info "No --version specified. Detecting latest BlueSpice version from Docker Hub..."
+    if ! TARGET_VERSION=$(detect_latest_bluespice_version); then
+        log_error "Could not detect latest version. Please specify with --version VERSION"
+        usage
+    fi
+    log_info "Detected latest BlueSpice version: $TARGET_VERSION"
 fi
 
 # Get current version from shared .env
