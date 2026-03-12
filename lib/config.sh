@@ -191,6 +191,10 @@ BLUESPICE_SERVICE_REPOSITORY=bluespice
 # Data Directory (for this wiki)
 DATA_DIR=/bluespice
 
+# Init settings paths for LocalSettings.php
+WIKI_PRE_INIT_SETTINGS_FILE=/data/bluespice/pre-init-settings.php
+WIKI_POST_INIT_SETTINGS_FILE=/data/bluespice/post-init-settings.php
+
 # Web Configuration
 VIRTUAL_PROTO=http
 HTTP_PORT=80
