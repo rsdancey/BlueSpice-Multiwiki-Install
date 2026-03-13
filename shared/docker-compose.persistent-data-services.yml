@@ -35,7 +35,7 @@ services:
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g"
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
       - "OPENSEARCH_PATH_CONF=/usr/share/opensearch/config"
     ulimits:
       memlock:
@@ -57,9 +57,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 1.5G
         reservations:
-          memory: 2G
+          memory: 512M
     labels:
       com.bluespice.service: "search"
       com.bluespice.type: "persistent-data"

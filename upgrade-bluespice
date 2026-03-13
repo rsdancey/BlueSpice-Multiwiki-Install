@@ -188,6 +188,10 @@ pull_docker_images() {
         "bluespice/database:${version}"
         "bluespice/search:${version}"
         "bluespice/cache:${version}"
+        "bluespice/proxy:${version}"
+        "bluespice/formula:${version}"
+        "bluespice/pdf:${version}"
+        "bluespice/diagram:${version}"
     )
     
     for image in "${images[@]}"; do
@@ -222,21 +226,21 @@ upgrade_shared_infrastructure() {
     cd "$SHARED_DIR"
     
     if docker compose --env-file .shared.env -f docker-compose.persistent-data-services.yml up -d; then
-        log_info "✓ Shared services restarted"
+        log_info "✓ Persistent data services restarted"
     else
-        log_error "Failed to restart shared services"
+        log_error "Failed to restart persistent data services"
         return 1
     fi
-    
+
     # Wait for services to be healthy
     log_info "Waiting for shared services to be healthy..."
     sleep 10
-    
+
     local services=("bluespice-database" "bluespice-search" "bluespice-cache")
     for service in "${services[@]}"; do
         local health_status
         health_status=$(docker inspect --format='{{.State.Health.Status}}' "$service" 2>/dev/null || echo "none")
-        
+
         if [[ "$health_status" == "healthy" ]] || [[ "$health_status" == "none" ]]; then
             local running_status
             running_status=$(docker inspect --format='{{.State.Status}}' "$service" 2>/dev/null || echo "unknown")
@@ -249,6 +253,19 @@ upgrade_shared_infrastructure() {
             log_warn "⚠ $service health: $health_status"
         fi
     done
+
+    # Restart stateless services (proxy, formula, pdf, diagram) and letsencrypt with new version
+    # Note: proxy and letsencrypt must be started together so depends_on resolves across files
+    log_info "Restarting stateless and proxy services..."
+    if docker compose --env-file .shared.env \
+        -f docker-compose.stateless-services.yml \
+        -f docker-compose.proxy.yml \
+        -f docker-compose.proxy-letsencrypt.yml \
+        up -d; then
+        log_info "✓ Stateless, proxy, and Let's Encrypt services restarted"
+    else
+        log_warn "⚠ Failed to restart stateless/proxy services"
+    fi
 }
 
 # Upgrade a single wiki

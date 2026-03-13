@@ -159,10 +159,12 @@ save_configuration() {
     
     # Generate secure passwords
     local db_password
-    local db_root_password
     db_password=$(openssl rand -base64 16 | tr -d "=+/")
-    db_root_password=$(openssl rand -base64 16 | tr -d "=+/")
-    
+
+    # Detect current BlueSpice version
+    local wiki_version
+    wiki_version=$("$SCRIPT_DIR/lib/get-latest-bluespice-version.sh")
+
     # Create environment file with all configuration
     cat > "$env_file" << EOF
 # BlueSpice Wiki Configuration
@@ -179,10 +181,9 @@ DB_PORT=3306
 DB_NAME=${WIKI_NAME}_wiki
 DB_USER=${WIKI_NAME}_user
 DB_PASS=$db_password
-DB_ROOT_PASS=$db_root_password
 
 # Version and Edition
-VERSION=$($SCRIPT_DIR/lib/get-latest-bluespice-version.sh)
+VERSION=$wiki_version
 EDITION=free
 
 # Service Repository (needed for docker-compose)
@@ -232,7 +233,7 @@ ADMIN_MAIL=$SMTP_USER
 
 # Container Configuration
 CONTAINER_PREFIX=bluespice-$WIKI_NAME
-BLUESPICE_WIKI_IMAGE=bluespice/wiki:5.1
+BLUESPICE_WIKI_IMAGE=bluespice/wiki:$wiki_version
 
 # SSL Configuration
 SSL_ENABLED=$SSL_ENABLED
