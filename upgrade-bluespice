@@ -209,6 +209,20 @@ pull_docker_images() {
 
 # Upgrade shared infrastructure
 upgrade_shared_infrastructure() {
+    # Ensure shared env exists or restore from latest backup
+    if [[ ! -f "$SHARED_ENV" ]]; then
+        log_warn "Shared env missing: $SHARED_ENV"
+        latest_backup_dir=$(ls -1dt /tmp/bluespice-upgrade-* 2>/dev/null | head -n1 || true)
+        if [[ -n "$latest_backup_dir" && -f "$latest_backup_dir/shared.env.backup" ]]; then
+            cp "$latest_backup_dir/shared.env.backup" "$SHARED_ENV"
+            chgrp bluespice "$SHARED_ENV" 2>/dev/null || true
+            chmod g+rw "$SHARED_ENV" 2>/dev/null || true
+            log_info "Restored $SHARED_ENV from $latest_backup_dir/shared.env.backup"
+        else
+            log_error "Missing $SHARED_ENV and no backup found. Run ./setup-shared-services to recreate it, then re-run the upgrade."
+            return 1
+        fi
+    fi
     local version="$1"
     
     log_info "Upgrading shared infrastructure to version $version"
