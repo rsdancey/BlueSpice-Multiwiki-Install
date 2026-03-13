@@ -287,6 +287,12 @@ upgrade_wiki() {
     local wiki_name="$1"
     local version="$2"
     local wiki_dir="${WIKIS_DIR}/${wiki_name}"
+    # Pre-check OAuth extension presence (snapshot)
+    local had_auth_ext=false
+    if docker_exec_safe "${wiki_name}" test -d /app/bluespice/w/extensions/PluggableAuth \
+       && docker_exec_safe "${wiki_name}" test -d /app/bluespice/w/extensions/OpenIDConnect; then
+        had_auth_ext=true
+    fi
     
     if [[ ! -d "$wiki_dir" ]]; then
         log_error "Wiki directory not found: $wiki_dir"
@@ -335,10 +341,12 @@ upgrade_wiki() {
         log_warn "Container failed to become ready - OAuth extensions may not install correctly"
     fi
     
-    if setup_oauth_extensions_for_upgrade "$wiki_name" "$wiki_dir" "$wiki_domain"; then
-        log_info "✓ OAuth extensions configured for $wiki_name"
+    # Always reinstall OAuth extensions after upgrade (container recreate wipes /app)
+    log_info "Reinstalling OAuth extensions for $wiki_name..."
+    if install_auth_extensions "$wiki_name"; then
+        log_info "✓ OAuth extensions installed for $wiki_name"
     else
-        log_warn "⚠ OAuth extension setup encountered issues for $wiki_name"
+        log_warn "⚠ Could not reinstall OAuth extensions for $wiki_name"
         log_warn "  Wiki is functional but OAuth authentication may not work"
     fi
     
