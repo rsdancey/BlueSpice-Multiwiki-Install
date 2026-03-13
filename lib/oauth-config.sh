@@ -139,6 +139,13 @@ install_auth_extensions() {
     fi
     
     # Copy extensions to container
+    # Also persist durable copies under /data/bluespice/extensions (host volume)
+    docker_exec_safe "$wiki_name" mkdir -p /data/bluespice/extensions >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" rm -rf /data/bluespice/extensions/PluggableAuth /data/bluespice/extensions/OpenIDConnect >/dev/null 2>&1 || true
+    if ! docker_copy_to_container "$wiki_name" "$temp_dir/PluggableAuth" "/data/bluespice/extensions/"; then log_warn "⚠️ Failed to copy PluggableAuth to persistent /data; continuing"; fi
+    if ! docker_copy_to_container "$wiki_name" "$temp_dir/OpenIDConnect" "/data/bluespice/extensions/"; then log_warn "⚠️ Failed to copy OpenIDConnect to persistent /data; continuing"; fi
+    docker_exec_safe "$wiki_name" chown -R bluespice:bluespice /data/bluespice/extensions >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" chmod -R g+rwX /data/bluespice/extensions >/dev/null 2>&1 || true
     echo "  📋 Installing extensions in container..."
     if ! docker_copy_to_container "$wiki_name" "$temp_dir/PluggableAuth" "/app/bluespice/w/extensions/"; then
         log_error "❌ Failed to copy PluggableAuth to container" >&2
