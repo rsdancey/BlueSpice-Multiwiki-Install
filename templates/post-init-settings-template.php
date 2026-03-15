@@ -5,7 +5,7 @@
 # This template should be copied to /bluespice/<wiki-name>/post-init-settings.php
 # when creating a new wiki instance.
 #
-# Auth extensions are loaded only when their directories exist (is_dir check).
+# Auth extensions are loaded only when their extension.json exists.
 # This safely handles task containers that lack the extensions, and also
 # allows update.php to see the schema so DB tables are created automatically.
 
@@ -74,17 +74,17 @@ $wgSMTP = [
 # ============================================
 # OAuth Extensions Loading
 # ============================================
-# is_dir() checks safely handle task containers where extensions may not exist,
+# file_exists() checks safely handle missing extensions without false-positives
 # and allow update.php to create required DB tables during initialization.
 
 $pluggableAuthPath = '/app/bluespice/w/extensions/PluggableAuth';
 $openIDConnectPath = '/app/bluespice/w/extensions/OpenIDConnect';
 
-if ( is_dir( $pluggableAuthPath ) ) {
+if ( file_exists( $pluggableAuthPath . '/extension.json' ) ) {
     wfLoadExtension( 'PluggableAuth' );
 }
 
-if ( is_dir( $openIDConnectPath ) ) {
+if ( file_exists( $openIDConnectPath . '/extension.json' ) ) {
     wfLoadExtension( 'OpenIDConnect' );
 }
 
@@ -95,7 +95,7 @@ if ( is_dir( $openIDConnectPath ) ) {
 # (stored in bs_settings3 DB table as DistributionConnectorPluggableAuthConfig).
 # Do not set $wgPluggableAuth_Config here - it conflicts with the DB config.
 
-if ( is_dir( $pluggableAuthPath ) ) {
+if ( file_exists( $pluggableAuthPath . '/extension.json' ) ) {
     # Enable local login alongside SSO so admins can always log in
     $wgPluggableAuth_EnableLocalLogin = true;
     $wgPluggableAuth_EnableAutoLogin = false;

@@ -157,9 +157,12 @@ save_configuration() {
     
     echo "💾 Saving configuration to $env_file..."
     
-    # Generate secure passwords
-    local db_password
+    # Generate secure passwords and secrets
+    local db_password internal_secretkey internal_upgradekey internal_token_auth_salt
     db_password=$(openssl rand -base64 16 | tr -d "=+/")
+    internal_secretkey=$(openssl rand -hex 32)
+    internal_upgradekey=$(openssl rand -hex 32)
+    internal_token_auth_salt=$(openssl rand -hex 32)
 
     # Detect current BlueSpice version
     local wiki_version
@@ -237,6 +240,11 @@ BLUESPICE_WIKI_IMAGE=bluespice/wiki:$wiki_version
 
 # SSL Configuration
 SSL_ENABLED=$SSL_ENABLED
+
+# Internal secrets for BlueSpice 5.2.x (loaded by start-*-wrapper.sh via init-envs)
+INTERNAL_WIKI_SECRETKEY=$internal_secretkey
+INTERNAL_WIKI_UPGRADEKEY=$internal_upgradekey
+INTERNAL_WIKI_TOKEN_AUTH_SALT=$internal_token_auth_salt
 EOF
 
     echo "✅ Configuration saved successfully"

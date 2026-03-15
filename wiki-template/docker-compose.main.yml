@@ -47,6 +47,9 @@ services:
       - WIKI_PRE_INIT_SETTINGS_FILE=/data/bluespice/pre-init-settings.php
       - WIKI_POST_INIT_SETTINGS_FILE=/data/bluespice/post-init-settings.php
       - WIKI_BASE_PATH=/
+      - INTERNAL_WIKI_SECRETKEY=${INTERNAL_WIKI_SECRETKEY}
+      - INTERNAL_WIKI_UPGRADEKEY=${INTERNAL_WIKI_UPGRADEKEY}
+      - INTERNAL_WIKI_TOKEN_AUTH_SALT=${INTERNAL_WIKI_TOKEN_AUTH_SALT}
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-web"
@@ -76,6 +79,9 @@ services:
       - WIKI_PRE_INIT_SETTINGS_FILE=/data/bluespice/pre-init-settings.php
       - WIKI_POST_INIT_SETTINGS_FILE=/data/bluespice/post-init-settings.php
       - WIKI_BASE_PATH=/
+      - INTERNAL_WIKI_SECRETKEY=${INTERNAL_WIKI_SECRETKEY}
+      - INTERNAL_WIKI_UPGRADEKEY=${INTERNAL_WIKI_UPGRADEKEY}
+      - INTERNAL_WIKI_TOKEN_AUTH_SALT=${INTERNAL_WIKI_TOKEN_AUTH_SALT}
     networks:
       - bluespice-network
     tmpfs:

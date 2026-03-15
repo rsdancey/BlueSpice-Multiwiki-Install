@@ -1,17 +1,21 @@
 #!/bin/bash
 # BlueSpice Multi-Wiki Upgrade Script
-# Upgrades all wikis and shared infrastructure to a new BlueSpice version
+# Upgrades all wikis (and optionally shared infrastructure) to a new BlueSpice version.
+#
+# Key design decisions:
+#   - No global set -euo pipefail; each step is checked individually
+#   - Strict mode from docker-utils.sh is explicitly reset after sourcing
+#   - OAuth extension presence is checked on the HOST volume before container recreation
+#   - update.php is run directly via docker exec (not via bluespice-deploy-wiki)
+#   - Each wiki is upgraded independently; failure of one does not stop others
+#   - Required env vars (CACHE_HOST etc.) are verified/added to compose files before upgrade
 
-set -euo pipefail
-
-# Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKIS_DIR="$(dirname "$SCRIPT_DIR")/wikis"
 SHARED_DIR="${SCRIPT_DIR}/shared"
-SHARED_ENV="${SHARED_DIR}/.shared.env"
 BACKUP_DIR="/tmp/bluespice-upgrade-$(date +%Y%m%d-%H%M%S)"
 
-# Source required libraries
+# Source libraries, then immediately reset any strict mode they may have set
 for lib in logging.sh docker-utils.sh oauth-config.sh; do
     lib_path="${SCRIPT_DIR}/lib/${lib}"
     if [[ ! -f "$lib_path" ]]; then
@@ -21,422 +25,509 @@ for lib in logging.sh docker-utils.sh oauth-config.sh; do
     # shellcheck source=/dev/null
     source "$lib_path"
 done
+# docker-utils.sh has `set -euo pipefail` — reset it so it does not affect this script
+set +e; set +u; set +o pipefail 2>/dev/null || true
 
-# Usage information
+# ============================================================
+# Argument parsing
+# ============================================================
+TARGET_VERSION=""
+FORCE=false
+SPECIFIC_WIKI=""
+SKIP_SHARED=false
+DRY_RUN=false
+
 usage() {
-    cat << USAGE
+    cat <<USAGE
 Usage: $0 [OPTIONS]
 
-Upgrade BlueSpice multi-wiki installation to a new version.
+Upgrade BlueSpice wikis to a new version.
 
 OPTIONS:
-    -v, --version VERSION    Target version to upgrade to (e.g., 5.1.3)
-                             (optional: auto-detected from Docker Hub if omitted)
-    -f, --force              Force upgrade even if already on target version
-    -w, --wiki-only WIKI     Upgrade only specific wiki instance
-    -s, --skip-shared        Skip shared infrastructure upgrade
-    -b, --backup-only        Only create backups, don't upgrade
-    -h, --help               Show this help message
+  -v, --version VERSION   Target version (default: auto-detect from Docker Hub)
+  -f, --force             Re-run upgrade even if already on target version
+  -w, --wiki WIKI_NAME    Upgrade only the named wiki (default: all)
+  -s, --skip-shared       Skip shared services (DB, cache, proxy) upgrade
+  -n, --dry-run           Show what would be done without making changes
+  -h, --help              Show this help
 
 EXAMPLES:
-    # Upgrade all wikis to latest auto-detected version
-    $0
-    
-    # Upgrade all wikis to a specific version
-    $0 --version 5.1.3
-    
-    # Upgrade only a specific wiki
-    $0 --version 5.1.3 --wiki-only mywiki
-    
-    # Upgrade wikis only (skip shared services)
-    $0 --version 5.1.3 --skip-shared
-    
-    # Create backup without upgrading
-    $0 --backup-only
-
+  $0                          # Auto-detect latest and upgrade all wikis
+  $0 --version 5.2.2          # Upgrade all wikis to 5.2.2
+  $0 --version 5.2.2 --wiki mywiki  # Upgrade only mywiki to 5.2.2
+  $0 --skip-shared            # Upgrade wikis only, leave shared services alone
 USAGE
     exit 1
 }
 
-# Parse arguments
-TARGET_VERSION=""
-FORCE_UPGRADE=false
-SPECIFIC_WIKI=""
-SKIP_SHARED=false
-BACKUP_ONLY=false
-
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        -v|--version)
-            TARGET_VERSION="$2"
-            shift 2
-            ;;
-        -f|--force)
-            FORCE_UPGRADE=true
-            shift
-            ;;
-        -w|--wiki-only)
-            SPECIFIC_WIKI="$2"
-            shift 2
-            ;;
-        -s|--skip-shared)
-            SKIP_SHARED=true
-            shift
-            ;;
-        -b|--backup-only)
-            BACKUP_ONLY=true
-            shift
-            ;;
-        -h|--help)
-            usage
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            usage
-            ;;
+    case "$1" in
+        -v|--version)     TARGET_VERSION="$2"; shift 2 ;;
+        -f|--force)       FORCE=true; shift ;;
+        -w|--wiki)        SPECIFIC_WIKI="$2"; shift 2 ;;
+        -s|--skip-shared) SKIP_SHARED=true; shift ;;
+        -n|--dry-run)     DRY_RUN=true; shift ;;
+        -h|--help)        usage ;;
+        *) log_error "Unknown option: $1"; usage ;;
     esac
 done
 
-# Detect latest BlueSpice version from Docker Hub
-detect_latest_bluespice_version() {
-    local api_url="https://hub.docker.com/v2/repositories/bluespice/wiki/tags/?page_size=100&ordering=last_updated"
+# ============================================================
+# Utility functions
+# ============================================================
+
+detect_latest_version() {
     local response
-    response=$(curl -sf "$api_url" 2>/dev/null) || {
-        log_warn "Could not query Docker Hub for latest version"
+    response=$(curl -sf \
+        "https://hub.docker.com/v2/repositories/bluespice/wiki/tags/?page_size=100&ordering=last_updated" \
+        2>/dev/null) || {
+        log_warn "Could not reach Docker Hub to detect latest version"
         return 1
     }
-    local latest_version
-    latest_version=$(echo "$response" | grep -oP '"name":\s*"\K[0-9]+\.[0-9]+\.[0-9]+(?=")' | sort -V | tail -1)
-    if [[ -z "$latest_version" ]]; then
-        log_warn "Could not determine latest BlueSpice version from Docker Hub"
+    local version
+    version=$(echo "$response" \
+        | grep -oP '"name":\s*"\K[0-9]+\.[0-9]+\.[0-9]+(?=")' \
+        | sort -V | tail -1)
+    if [[ -z "$version" ]]; then
+        log_warn "Could not parse version from Docker Hub response"
         return 1
     fi
-    echo "$latest_version"
+    echo "$version"
 }
 
-# Validate target version is specified (unless backup-only); auto-detect if omitted
-if [[ -z "$TARGET_VERSION" ]] && [[ "$BACKUP_ONLY" == false ]]; then
-    log_info "No --version specified. Detecting latest BlueSpice version from Docker Hub..."
-    if ! TARGET_VERSION=$(detect_latest_bluespice_version); then
-        log_error "Could not detect latest version. Please specify with --version VERSION"
-        usage
-    fi
-    log_info "Detected latest BlueSpice version: $TARGET_VERSION"
-fi
-
-# Get current version from shared .env
-get_current_version() {
-    if [[ -f "$SHARED_ENV" ]]; then
-        grep "^VERSION=" "$SHARED_ENV" | cut -d'=' -f2
-    else
-        echo "unknown"
-    fi
-}
-
-# Create backup of configuration files
-backup_configurations() {
-    log_info "Creating configuration backups in: $BACKUP_DIR"
-    mkdir -p "$BACKUP_DIR"
-    
-    # Backup shared .env
-    if [[ -f "$SHARED_ENV" ]]; then
-        cp "$SHARED_ENV" "${BACKUP_DIR}/shared.env.backup"
-        log_info "✓ Backed up shared configuration"
-    fi
-    
-    # Backup all wiki .env files
-    local wiki_count=0
-    if [[ -d "$WIKIS_DIR" ]]; then
-        for wiki_dir in "$WIKIS_DIR"/*; do
-            if [[ -d "$wiki_dir" ]] && [[ -f "${wiki_dir}/.env" ]]; then
-                local wiki_name
-                wiki_name=$(basename "$wiki_dir")
-                cp "${wiki_dir}/.env" "${BACKUP_DIR}/${wiki_name}.env.backup"
-                wiki_count=$((wiki_count + 1))
-            fi
-        done
-        log_info "✓ Backed up $wiki_count wiki configuration(s)"
-    fi
-    
-    log_info "Backup completed: $BACKUP_DIR"
-}
-
-# Update version in a file
-update_version_in_file() {
+# Read a single value from a KEY=VALUE env file
+read_env_var() {
     local file="$1"
-    local new_version="$2"
-    
-    if [[ -f "$file" ]]; then
-        sed -i "s/^VERSION=.*/VERSION=${new_version}/" "$file"
-        sed -i "s|^BLUESPICE_WIKI_IMAGE=bluespice/wiki:.*|BLUESPICE_WIKI_IMAGE=bluespice/wiki:${new_version}|" "$file" 2>/dev/null || true
+    local var="$2"
+    grep "^${var}=" "$file" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'"
+}
+
+# Ensure a VAR=VALUE line appears in BOTH service blocks of a docker-compose file.
+# Inserts the line immediately before each `<<: *common-config` anchor if missing.
+ensure_compose_env_var() {
+    local compose_file="$1"
+    local var_name="$2"
+    local var_value="$3"
+
+    # Count how many times this var appears (expect 2 — wiki-web and wiki-task)
+    local count
+    count=$(grep -c "^\s*- ${var_name}=" "$compose_file" 2>/dev/null || echo 0)
+
+    if [[ "$count" -ge 2 ]]; then
+        return 0  # Already present in both service blocks
+    fi
+
+    log_warn "    ${var_name} missing from $(basename "$compose_file") — adding..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "    [DRY RUN] Would add ${var_name}=${var_value}"
         return 0
-    else
-        log_warn "File not found: $file"
-        return 1
+    fi
+
+    python3 - "$compose_file" "$var_name" "$var_value" << 'PYEOF'
+import re, sys
+
+compose_file, var_name, var_value = sys.argv[1], sys.argv[2], sys.argv[3]
+var_line = f'      - {var_name}={var_value}\n'
+
+with open(compose_file, 'r') as f:
+    lines = f.readlines()
+
+# Walk the file and insert var_line at the end of each `environment:` block.
+# An environment block (4-space indent header) ends when we see a non-blank
+# line that does NOT start with 6 spaces (i.e. the next top-level service key).
+# This is safer than the old approach of inserting before <<: *common-config,
+# which could appear after a volumes: block rather than environment:.
+new_lines = []
+in_environment = False
+added = 0
+
+for line in lines:
+    stripped = line.rstrip('\n')
+
+    if re.match(r'^    environment:\s*$', stripped):
+        in_environment = True
+        new_lines.append(line)
+        continue
+
+    if in_environment:
+        # Still inside the block: 6-space-indented items or blank lines
+        if re.match(r'^      ', stripped) or stripped == '':
+            new_lines.append(line)
+            continue
+        else:
+            # First line that belongs to the next block — insert here
+            new_lines.append(var_line)
+            added += 1
+            in_environment = False
+
+    new_lines.append(line)
+
+# Handle environment block at end of file
+if in_environment:
+    new_lines.append(var_line)
+    added += 1
+
+if added == 0:
+    print(f'WARNING: Could not find environment block for {var_name}', file=sys.stderr)
+    sys.exit(1)
+
+with open(compose_file, 'w') as f:
+    f.writelines(new_lines)
+
+print(f'Added {var_name} ({added} occurrence(s))')
+PYEOF
+    # shellcheck disable=SC2181
+    if [[ $? -ne 0 ]]; then
+        log_warn "    Could not auto-add ${var_name} — please add it manually to ${compose_file}"
     fi
 }
 
-# Pull Docker images for new version
-pull_docker_images() {
-    local version="$1"
-    
-    log_info "Pulling Docker images for version $version"
-    
-    local images=(
-        "bluespice/wiki:${version}"
-        "bluespice/helper:${version}"
-        "bluespice/database:${version}"
-        "bluespice/search:${version}"
-        "bluespice/cache:${version}"
-        "bluespice/proxy:${version}"
-        "bluespice/formula:${version}"
-        "bluespice/pdf:${version}"
-        "bluespice/diagram:${version}"
-    )
-    
-    for image in "${images[@]}"; do
-        log_info "Pulling $image..."
-        if docker pull "$image"; then
-            log_info "✓ Pulled $image"
-        else
-            log_error "Failed to pull $image"
-            return 1
-        fi
-    done
-    
-    log_info "✓ All Docker images pulled successfully"
-}
+# Fix PermissionManagerActivePreset when set to "custom" on Free edition wikis.
+# Free edition only allows: public, protected, private.
+fix_permission_manager_preset() {
+    local db_name="$1"
+    local db_user="$2"
+    local db_pass="$3"
 
-# Upgrade shared infrastructure
-upgrade_shared_infrastructure() {
-    # Ensure shared env exists or restore from latest backup
-    if [[ ! -f "$SHARED_ENV" ]]; then
-        log_warn "Shared env missing: $SHARED_ENV"
-        latest_backup_dir=$(ls -1dt /tmp/bluespice-upgrade-* 2>/dev/null | head -n1 || true)
-        if [[ -n "$latest_backup_dir" && -f "$latest_backup_dir/shared.env.backup" ]]; then
-            cp "$latest_backup_dir/shared.env.backup" "$SHARED_ENV"
-            chgrp bluespice "$SHARED_ENV" 2>/dev/null || true
-            chmod g+rw "$SHARED_ENV" 2>/dev/null || true
-            log_info "Restored $SHARED_ENV from $latest_backup_dir/shared.env.backup"
-        else
-            log_error "Missing $SHARED_ENV and no backup found. Run ./setup-shared-services to recreate it, then re-run the upgrade."
-            return 1
-        fi
-    fi
-    local version="$1"
-    
-    log_info "Upgrading shared infrastructure to version $version"
-    
-    # Update shared .env
-    if update_version_in_file "$SHARED_ENV" "$version"; then
-        log_info "✓ Updated shared configuration to version $version"
-    else
-        log_error "Failed to update shared configuration"
-        return 1
-    fi
-    
-    # Restart shared services
-    log_info "Restarting shared services..."
-    cd "$SHARED_DIR"
-    
-    if docker compose --env-file .shared.env -f docker-compose.persistent-data-services.yml up -d; then
-        log_info "✓ Persistent data services restarted"
-    else
-        log_error "Failed to restart persistent data services"
-        return 1
-    fi
+    log_info "  Checking PermissionManagerActivePreset..."
 
-    # Wait for services to be healthy
-    log_info "Waiting for shared services to be healthy..."
-    sleep 10
+    local current_preset
+    current_preset=$(docker exec bluespice-database \
+        mariadb -u"${db_user}" -p"${db_pass}" "${db_name}" \
+        -sNe "SELECT s_value FROM bs_settings3 WHERE s_name='PermissionManagerActivePreset' LIMIT 1;" \
+        2>/dev/null | tr -d '"' || echo "")
 
-    local services=("bluespice-database" "bluespice-search" "bluespice-cache")
-    for service in "${services[@]}"; do
-        local health_status
-        health_status=$(docker inspect --format='{{.State.Health.Status}}' "$service" 2>/dev/null || echo "none")
-
-        if [[ "$health_status" == "healthy" ]] || [[ "$health_status" == "none" ]]; then
-            local running_status
-            running_status=$(docker inspect --format='{{.State.Status}}' "$service" 2>/dev/null || echo "unknown")
-            if [[ "$running_status" == "running" ]]; then
-                log_info "✓ $service is running"
+    if [[ "$current_preset" == "custom" ]]; then
+        log_warn "  PermissionManagerActivePreset='custom' is invalid for Free edition — resetting to 'public'"
+        if [[ "$DRY_RUN" != "true" ]]; then
+            if docker exec bluespice-database \
+                mariadb -u"${db_user}" -p"${db_pass}" "${db_name}" \
+                -e "UPDATE bs_settings3 SET s_value='\"public\"' WHERE s_name='PermissionManagerActivePreset';" \
+                2>/dev/null; then
+                log_info "  PermissionManagerActivePreset reset to 'public'"
             else
-                log_warn "⚠ $service status: $running_status"
+                log_warn "  Could not reset PermissionManagerActivePreset (non-fatal)"
             fi
         else
-            log_warn "⚠ $service health: $health_status"
+            log_info "  [DRY RUN] Would reset PermissionManagerActivePreset to 'public'"
         fi
+    else
+        log_info "  PermissionManagerActivePreset is OK (${current_preset:-not set})"
+    fi
+}
+
+# Bump wgCacheEpoch in post-init-settings.php to bust stale browser/server caches.
+update_cache_epoch() {
+    local post_init_file="$1"
+
+    if [[ ! -f "$post_init_file" ]]; then
+        return 0
+    fi
+
+    local epoch
+    epoch=$(date +%Y%m%d%H%M%S)
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "  [DRY RUN] Would set wgCacheEpoch=$epoch in $(basename "$post_init_file")"
+        return 0
+    fi
+
+    if grep -q 'wgCacheEpoch' "$post_init_file"; then
+        sed -i "s/\\\$wgCacheEpoch = .*;/\$wgCacheEpoch = \"${epoch}\";/" "$post_init_file"
+    else
+        echo "\$wgCacheEpoch = \"${epoch}\";" >> "$post_init_file"
+    fi
+    log_info "  Set wgCacheEpoch=$epoch in $(basename "$post_init_file")"
+}
+
+# ============================================================
+# Wiki upgrade
+# ============================================================
+upgrade_wiki() {
+    local wiki_name="$1"
+    local target_version="$2"
+
+    local wiki_dir="${WIKIS_DIR}/${wiki_name}"
+    local compose_file="${wiki_dir}/docker-compose.main.yml"
+    local env_file="${wiki_dir}/.env"
+
+    log_info ""
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "Wiki: $wiki_name"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    if [[ ! -f "$env_file" ]]; then
+        log_error "  .env not found: $env_file"
+        return 1
+    fi
+    if [[ ! -f "$compose_file" ]]; then
+        log_error "  docker-compose.main.yml not found: $compose_file"
+        return 1
+    fi
+
+    # Read wiki settings from its own .env (not shared env)
+    local current_version edition data_dir db_name db_user db_pass
+    current_version=$(read_env_var "$env_file" "VERSION")
+    edition=$(read_env_var "$env_file" "EDITION")
+    data_dir=$(read_env_var "$env_file" "DATA_DIR")
+    db_name=$(read_env_var "$env_file" "DB_NAME")
+    db_user=$(read_env_var "$env_file" "DB_USER")
+    db_pass=$(read_env_var "$env_file" "DB_PASS")
+
+    log_info "  Current version : ${current_version:-unknown}"
+    log_info "  Target version  : $target_version"
+    log_info "  Edition         : ${edition:-unknown}"
+    log_info "  Data dir        : ${data_dir:-unknown}"
+
+    # Skip if already on target version (unless --force)
+    if [[ "$current_version" == "$target_version" ]] && [[ "$FORCE" != "true" ]]; then
+        log_info "  Already on $target_version — skipping (use --force to override)"
+        return 0
+    fi
+
+    # Check OAuth extensions on HOST VOLUME before container recreation.
+    # We cannot rely on the container's /app path because it is ephemeral.
+    local had_oauth=false
+    local oauth_host_path="${data_dir}/${wiki_name}/extensions/PluggableAuth/extension.json"
+    if [[ -f "$oauth_host_path" ]]; then
+        had_oauth=true
+        log_info "  OAuth extensions present on host — will reinstall after upgrade"
+    else
+        log_info "  OAuth extensions not found on host — will skip reinstall"
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "  [DRY RUN] Steps that would execute:"
+        log_info "    1.  Verify/add required env vars in compose file"
+        log_info "    1b. Verify/generate INTERNAL_WIKI_* secrets"
+        log_info "    2.  docker pull bluespice/wiki:${target_version}"
+        log_info "    3.  Update .env (VERSION, BLUESPICE_WIKI_IMAGE)"
+        log_info "    4.  Create preupdate/postupdate log directories"
+        log_info "    5.  docker compose up -d --force-recreate"
+        log_info "    6.  Wait for container + fix log dir ownership"
+        log_info "    7.  php maintenance/run.php update --quick"
+        [[ "$had_oauth" == "true" ]] && log_info "    8.  install_auth_extensions"
+        log_info "    9.  Update wgCacheEpoch in post-init-settings.php"
+        [[ "$edition" == "free" ]] && log_info "    10. Check/fix PermissionManagerActivePreset"
+        log_info "    11. Rebuild search index"
+        return 0
+    fi
+
+    # --- Step 1: Ensure compose file has all required env vars ---
+    log_info "  Verifying compose file env vars..."
+    ensure_compose_env_var "$compose_file" "DATADIR"                      "/data/bluespice"
+    ensure_compose_env_var "$compose_file" "WIKI_PRE_INIT_SETTINGS_FILE"  "/data/bluespice/pre-init-settings.php"
+    ensure_compose_env_var "$compose_file" "WIKI_POST_INIT_SETTINGS_FILE" "/data/bluespice/post-init-settings.php"
+    ensure_compose_env_var "$compose_file" "CACHE_HOST"                   "bluespice-cache"
+    ensure_compose_env_var "$compose_file" "CACHE_PORT"                   "11211"
+
+    # --- Step 1b: Ensure INTERNAL_WIKI_* secrets exist (required by 5.2.x) ---
+    log_info "  Verifying INTERNAL_WIKI_* secrets..."
+    for secret_var in INTERNAL_WIKI_SECRETKEY INTERNAL_WIKI_UPGRADEKEY INTERNAL_WIKI_TOKEN_AUTH_SALT; do
+        existing=$(read_env_var "$env_file" "$secret_var")
+        if [[ -z "$existing" ]]; then
+            new_secret=$(openssl rand -hex 32)
+            echo "${secret_var}=${new_secret}" >> "$env_file"
+            log_info "    Generated new ${secret_var}"
+        fi
+        ensure_compose_env_var "$compose_file" "$secret_var" "\${${secret_var}}"
     done
 
-    # Restart stateless services (proxy, formula, pdf, diagram) and letsencrypt with new version
-    # Note: proxy and letsencrypt must be started together so depends_on resolves across files
-    log_info "Restarting stateless and proxy services..."
+    # --- Step 2: Pull new image ---
+    log_info "  Pulling bluespice/wiki:${target_version}..."
+    if ! docker pull "bluespice/wiki:${target_version}"; then
+        log_error "  Failed to pull bluespice/wiki:${target_version} — aborting upgrade for $wiki_name"
+        return 1
+    fi
+
+    # --- Step 3: Update .env ---
+    mkdir -p "$BACKUP_DIR"
+    cp "$env_file" "${BACKUP_DIR}/${wiki_name}.env.bak"
+    sed -i "s/^VERSION=.*/VERSION=${target_version}/" "$env_file"
+    sed -i "s|^BLUESPICE_WIKI_IMAGE=.*|BLUESPICE_WIKI_IMAGE=bluespice/wiki:${target_version}|" "$env_file"
+    log_info "  Updated .env to version $target_version"
+
+    # --- Step 4: Pre-create run-updates log directories ---
+    # If these don't exist before the container starts, run-updates fails trying to write logs.
+    local log_base="${data_dir}/${wiki_name}/logs"
+    mkdir -p "${log_base}/preupdate" "${log_base}/postupdate" 2>/dev/null || true
+    log_info "  Ensured preupdate/postupdate log directories exist"
+
+    local container_name
+    container_name=$(get_container_name "$wiki_name")
+
+    # --- Step 5: Recreate containers ---
+    log_info "  Recreating containers with new image..."
+    cd "$wiki_dir" || return 1
+    if ! docker compose --env-file .env -f docker-compose.main.yml up -d --force-recreate; then
+        log_error "  docker compose up failed for $wiki_name"
+        return 1
+    fi
+
+    # --- Step 6: Wait for container and fix log dir ownership ---
+    log_info "  Waiting for wiki-web container to be ready..."
+    if ! wait_for_container_ready "$wiki_name" 120; then
+        log_error "  Container did not become ready within 120s for $wiki_name"
+        return 1
+    fi
+    # Fix ownership so run-updates can write to the log directories
+    docker exec --user root "$container_name" \
+        chown 1002:bluespice \
+        /data/bluespice/logs/preupdate \
+        /data/bluespice/logs/postupdate 2>/dev/null || true
+
+    # --- Step 7: Run MediaWiki database update ---
+    log_info "  Running MediaWiki database update..."
+    if docker exec --user root "$container_name" \
+        php /app/bluespice/w/maintenance/run.php update --quick; then
+        log_info "  Database update completed successfully"
+    else
+        log_warn "  update.php exited non-zero (may be non-fatal — continuing)"
+    fi
+
+    # --- Step 8: Reinstall OAuth extensions if previously present ---
+    if [[ "$had_oauth" == "true" ]]; then
+        log_info "  Reinstalling OAuth extensions..."
+        if install_auth_extensions "$wiki_name"; then
+            log_info "  OAuth extensions reinstalled successfully"
+        else
+            log_warn "  OAuth extension reinstall failed — wiki is functional but OAuth login may not work"
+        fi
+    fi
+
+    # --- Step 9: Bump wgCacheEpoch ---
+    local post_init_file="${data_dir}/${wiki_name}/post-init-settings.php"
+    update_cache_epoch "$post_init_file"
+
+    # --- Step 10: Fix PermissionManagerActivePreset for Free edition ---
+    if [[ "$edition" == "free" ]] && [[ -n "$db_name" ]]; then
+        fix_permission_manager_preset "$db_name" "$db_user" "$db_pass"
+    fi
+
+    # --- Step 11: Rebuild search index ---
+    # New BlueSpice versions may add index fields (e.g. suggestions-spellcheck) that
+    # require a full rebuild to create the updated mapping. Without this, searches
+    # throw BadRequest400Exception and show "Query cannot be executed" in the UI.
+    log_info "  Rebuilding search index with updated mappings..."
+    if docker exec "$container_name" /app/bin/rebuild-searchindex --main 2>&1 \
+            | grep -E "done:|created:|Error" | head -10; then
+        log_info "  Search index rebuilt"
+    else
+        log_warn "  Search index rebuild may have had issues — search could be degraded"
+    fi
+
+    log_info "  $wiki_name upgraded to $target_version successfully"
+    return 0
+}
+
+# ============================================================
+# Shared services upgrade
+# ============================================================
+upgrade_shared_services() {
+    local target_version="$1"
+    local shared_env="${SHARED_DIR}/.shared.env"
+
+    log_info ""
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "Shared services → $target_version"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    if [[ ! -f "$shared_env" ]]; then
+        log_warn "Shared env not found at $shared_env — skipping shared services upgrade"
+        return 0
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "  [DRY RUN] Would update $shared_env VERSION=$target_version and restart services"
+        return 0
+    fi
+
+    mkdir -p "$BACKUP_DIR"
+    cp "$shared_env" "${BACKUP_DIR}/shared.env.bak"
+    sed -i "s/^VERSION=.*/VERSION=${target_version}/" "$shared_env"
+    log_info "  Updated shared .env to version $target_version"
+
+    cd "$SHARED_DIR" || return 1
+
+    log_info "  Restarting persistent data services..."
+    if docker compose --env-file .shared.env \
+        -f docker-compose.persistent-data-services.yml up -d; then
+        log_info "  Persistent data services restarted"
+    else
+        log_warn "  Persistent data services restart had errors (non-fatal if already running)"
+    fi
+
+    # Brief pause for DB to stabilise before restarting stateless services
+    sleep 5
+
+    log_info "  Restarting stateless and proxy services..."
     if docker compose --env-file .shared.env \
         -f docker-compose.stateless-services.yml \
         -f docker-compose.proxy.yml \
         -f docker-compose.proxy-letsencrypt.yml \
         up -d; then
-        log_info "✓ Stateless, proxy, and Let's Encrypt services restarted"
+        log_info "  Stateless/proxy services restarted"
     else
-        log_warn "⚠ Failed to restart stateless/proxy services"
+        log_warn "  Some stateless/proxy services may not have started (non-fatal)"
     fi
 }
 
-# Upgrade a single wiki
-upgrade_wiki() {
-    local wiki_name="$1"
-    local version="$2"
-    local wiki_dir="${WIKIS_DIR}/${wiki_name}"
-    # Pre-check OAuth extension presence (snapshot)
-    local had_auth_ext=false
-    if docker_exec_safe "${wiki_name}" test -d /app/bluespice/w/extensions/PluggableAuth \
-       && docker_exec_safe "${wiki_name}" test -d /app/bluespice/w/extensions/OpenIDConnect; then
-        had_auth_ext=true
-    fi
-    
-    if [[ ! -d "$wiki_dir" ]]; then
-        log_error "Wiki directory not found: $wiki_dir"
-        return 1
-    fi
-    
-    log_info "═══════════════════════════════════════"
-    log_info "Upgrading wiki: $wiki_name"
-    log_info "═══════════════════════════════════════"
-    
-    # Update wiki .env
-    if update_version_in_file "${wiki_dir}/.env" "$version"; then
-        log_info "✓ Updated $wiki_name configuration to version $version"
-    else
-        log_error "Failed to update $wiki_name configuration"
-        return 1
-    fi
-    
-    # Run upgrade using the existing deployment script
-    log_info "Running upgrade pipeline for $wiki_name..."
-    cd "$SCRIPT_DIR"
-    
-    if [[ -x "${SCRIPT_DIR}/bluespice-deploy-wiki" ]]; then
-        if "${SCRIPT_DIR}/bluespice-deploy-wiki" --wiki-name="$wiki_name" --profile=upgrade; then
-            log_info "✓ Upgrade pipeline completed for $wiki_name"
-        else
-            log_error "Upgrade pipeline failed for $wiki_name"
-            return 1
+# ============================================================
+# Main
+# ============================================================
+main() {
+    # Auto-detect target version if not specified
+    if [[ -z "$TARGET_VERSION" ]]; then
+        log_info "No --version specified. Detecting latest BlueSpice version from Docker Hub..."
+        if ! TARGET_VERSION=$(detect_latest_version); then
+            log_error "Could not detect latest version. Please specify with --version VERSION"
+            exit 1
         fi
-    else
-        log_error "bluespice-deploy-wiki script not found or not executable"
-        return 1
+        log_info "Detected latest BlueSpice version: $TARGET_VERSION"
     fi
-    
-    # Load wiki environment to get WIKI_DOMAIN
-    local wiki_domain=""
-    if [[ -f "${wiki_dir}/.env" ]]; then
-        # shellcheck source=/dev/null
-        source "${wiki_dir}/.env" 2>/dev/null || true
-        wiki_domain="${WIKI_HOST:-${VIRTUAL_HOST:-}}"
-    fi
-    
-    # Install and configure OAuth extensions
-    log_info "Setting up OAuth extensions for $wiki_name..."
-    if ! wait_for_container_ready "$wiki_name" 60; then
-        log_warn "Container failed to become ready - OAuth extensions may not install correctly"
-    fi
-    
-    # Always reinstall OAuth extensions after upgrade (container recreate wipes /app)
-    log_info "Reinstalling OAuth extensions for $wiki_name..."
-    if install_auth_extensions "$wiki_name"; then
-        log_info "✓ OAuth extensions installed for $wiki_name"
-    else
-        log_warn "⚠ Could not reinstall OAuth extensions for $wiki_name"
-        log_warn "  Wiki is functional but OAuth authentication may not work"
-    fi
-    
-    log_info "✓ Wiki $wiki_name upgraded successfully"
-    log_info ""
-}
 
-# Get list of wikis to upgrade
-get_wiki_list() {
-    if [[ -n "$SPECIFIC_WIKI" ]]; then
-        echo "$SPECIFIC_WIKI"
-        return
+    log_info ""
+    log_info "═══════════════════════════════════════════════════"
+    log_info "BlueSpice Upgrade  →  $TARGET_VERSION"
+    [[ "$DRY_RUN" == "true" ]] && log_info "Mode: DRY RUN (no changes will be made)"
+    [[ "$FORCE"   == "true" ]] && log_info "Mode: FORCE (will re-upgrade wikis already on target)"
+    [[ -n "$SPECIFIC_WIKI" ]] && log_info "Scope: wiki '$SPECIFIC_WIKI' only"
+    log_info "Backups: $BACKUP_DIR"
+    log_info "═══════════════════════════════════════════════════"
+
+    # Upgrade shared services before wikis (DB must be up for update.php)
+    if [[ "$SKIP_SHARED" != "true" ]]; then
+        upgrade_shared_services "$TARGET_VERSION"
+    else
+        log_info "Skipping shared services (--skip-shared)"
     fi
-    
-    if [[ -d "$WIKIS_DIR" ]]; then
-        for wiki_dir in "$WIKIS_DIR"/*; do
+
+    # Build wiki list
+    local wiki_list=()
+    if [[ -n "$SPECIFIC_WIKI" ]]; then
+        wiki_list=("$SPECIFIC_WIKI")
+    else
+        for wiki_dir in "${WIKIS_DIR}"/*/; do
             if [[ -d "$wiki_dir" ]] && [[ -f "${wiki_dir}/.env" ]]; then
-                basename "$wiki_dir"
+                wiki_list+=("$(basename "$wiki_dir")")
             fi
         done
     fi
-}
 
-# Main upgrade process
-main() {
-    local current_version
-    current_version=$(get_current_version)
-    
-    log_info "═══════════════════════════════════════════════════"
-    log_info "BlueSpice Multi-Wiki Upgrade"
-    log_info "═══════════════════════════════════════════════════"
-    log_info "Current version: $current_version"
-    
-    if [[ "$BACKUP_ONLY" == false ]]; then
-        log_info "Target version:  $TARGET_VERSION"
-    else
-        log_info "Mode: Backup only"
-    fi
-    
-    log_info "═══════════════════════════════════════════════════"
-    echo ""
-    
-    # Check if upgrade is needed
-    if [[ "$current_version" == "$TARGET_VERSION" ]] && [[ "$FORCE_UPGRADE" == false ]] && [[ "$BACKUP_ONLY" == false ]]; then
-        log_warn "Already on version $TARGET_VERSION. Use --force to upgrade anyway."
+    if [[ ${#wiki_list[@]} -eq 0 ]]; then
+        log_warn "No wikis found in $WIKIS_DIR"
         exit 0
     fi
-    
-    # Create backups
-    backup_configurations
-    echo ""
-    
-    if [[ "$BACKUP_ONLY" == true ]]; then
-        log_info "Backup completed. Exiting without upgrade."
-        exit 0
-    fi
-    
-    # Pull Docker images
-    if ! pull_docker_images "$TARGET_VERSION"; then
-        log_error "Failed to pull Docker images. Upgrade aborted."
-        exit 1
-    fi
-    echo ""
-    
-    # Upgrade shared infrastructure
-    if [[ "$SKIP_SHARED" == false ]]; then
-        if ! upgrade_shared_infrastructure "$TARGET_VERSION"; then
-            log_error "Failed to upgrade shared infrastructure. Upgrade aborted."
-            log_info "Restore backups from: $BACKUP_DIR"
-            exit 1
-        fi
-        echo ""
-    else
-        log_info "Skipping shared infrastructure upgrade (--skip-shared)"
-        echo ""
-    fi
-    
-    # Upgrade wikis
-    local wiki_list
-    wiki_list=$(get_wiki_list)
-    local wiki_count
-    wiki_count=$(echo "$wiki_list" | wc -l)
+
+    log_info ""
+    log_info "Found ${#wiki_list[@]} wiki(s): ${wiki_list[*]}"
+
     local success_count=0
     local fail_count=0
     local failed_wikis=()
-    
-    log_info "Found $wiki_count wiki(s) to upgrade"
-    echo ""
-    
-    for wiki_name in $wiki_list; do
+
+    for wiki_name in "${wiki_list[@]}"; do
         if upgrade_wiki "$wiki_name" "$TARGET_VERSION"; then
             success_count=$((success_count + 1))
         else
@@ -444,31 +535,21 @@ main() {
             failed_wikis+=("$wiki_name")
         fi
     done
-    
-    # Summary
+
+    log_info ""
     log_info "═══════════════════════════════════════════════════"
     log_info "Upgrade Summary"
-    log_info "═══════════════════════════════════════════════════"
-    log_info "Successfully upgraded: $success_count wiki(s)"
-    
+    log_info "  Succeeded : $success_count"
     if [[ $fail_count -gt 0 ]]; then
-        log_error "Failed to upgrade: $fail_count wiki(s)"
-        for wiki in "${failed_wikis[@]}"; do
-            log_error "  - $wiki"
-        done
+        log_error "  Failed    : $fail_count  (${failed_wikis[*]})"
+        log_info  "  Restore   : cp ${BACKUP_DIR}/WIKI_NAME.env.bak ${WIKIS_DIR}/WIKI_NAME/.env"
     fi
-    
-    log_info "Backups saved in: $BACKUP_DIR"
-    log_info ""
-    log_info "To rollback, restore .env files from backup:"
-    log_info "  cp ${BACKUP_DIR}/shared.env.backup ${SHARED_ENV}"
-    log_info "  cp ${BACKUP_DIR}/WIKI_NAME.env.backup ${WIKIS_DIR}/WIKI_NAME/.env"
+    log_info "  Backups   : $BACKUP_DIR"
     log_info "═══════════════════════════════════════════════════"
-    
+
     if [[ $fail_count -gt 0 ]]; then
         exit 1
     fi
 }
 
-# Run main function
 main

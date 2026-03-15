@@ -1,285 +1,275 @@
 # BlueSpice Multi-Wiki Upgrade Guide
 
-This guide explains how to upgrade your BlueSpice multi-wiki installation to newer versions.
+**Current version: 5.2.2**
 
-## Overview
+This guide covers upgrading your BlueSpice multi-wiki installation using the `upgrade-bluespice` script. This is a fully homemade upgrade orchestration system — HelloWalt does not provide a multi-wiki upgrade tool.
 
-Your installation uses a **shared infrastructure** architecture:
-- **Shared Services**: Single database, search, and cache containers
-- **Individual Wikis**: Separate containers for each wiki instance
-- **Centralized Upgrade**: All wikis can be upgraded together or individually
+---
 
-## Available Tools
-
-### 1. `check-bluespice-versions`
-Displays your current installation status and available versions.
+## Quick Reference
 
 ```bash
-/core/core_install/check-bluespice-versions
+./upgrade-bluespice                        # auto-detect latest version, upgrade all wikis
+./upgrade-bluespice --version 5.2.2        # upgrade all wikis to a specific version
+./upgrade-bluespice --wiki mywiki          # upgrade only one wiki
+./upgrade-bluespice --dry-run              # preview what would happen, no changes
+./upgrade-bluespice --force                # re-run upgrade even if already on target version
+./upgrade-bluespice --skip-shared          # skip shared services, upgrade wikis only
 ```
 
-**Output includes:**
-- Current shared infrastructure version
-- Version of each wiki instance
-- Available versions on Docker Hub
-- Container status
+---
 
-### 2. `upgrade-bluespice`
-Performs the actual upgrade process.
+## Before You Start
 
 ```bash
-/core/core_install/upgrade-bluespice --version VERSION
+# Check current status
+./check-bluespice-versions
 ```
 
-## Upgrade Process
+This shows the running version and container status for every wiki.
 
-### Step 1: Check Current Status
+### Pre-upgrade database backup (recommended)
 
 ```bash
-/core/core_install/check-bluespice-versions
+DB_ROOT_PASS=$(grep DB_ROOT_PASS /core/core_install/shared/.shared.env | cut -d= -f2)
+docker exec bluespice-database \
+  mariadb-dump -uroot -p"$DB_ROOT_PASS" --all-databases --single-transaction \
+  > /backup/pre-upgrade-$(date +%Y%m%d).sql
 ```
 
-This shows you:
-- Your current version
-- Available updates
-- Any version mismatches between wikis
+The upgrade script automatically backs up each wiki's `.env` file to `/tmp/bluespice-upgrade-TIMESTAMP/` before making changes.
 
-### Step 2: Create Backup (Recommended)
+---
 
-Before upgrading, create a backup of your configurations:
+## Upgrade Process (what the script does)
 
-```bash
-/core/core_install/upgrade-bluespice --backup-only
-```
+For each wiki, `upgrade-bluespice` runs the following steps in order:
 
-Backups are stored in `/tmp/bluespice-upgrade-TIMESTAMP/`
+### 1. Verify compose file env vars
+Ensures these variables are present in the wiki's `docker-compose.main.yml`:
+- `DATADIR`
+- `WIKI_PRE_INIT_SETTINGS_FILE` / `WIKI_POST_INIT_SETTINGS_FILE`
+- `CACHE_HOST` / `CACHE_PORT`
 
-### Step 3: Perform Upgrade
+### 1b. Verify INTERNAL_WIKI_* secrets
+BlueSpice 5.2.x requires three secrets to be set:
 
-#### Upgrade Everything (Recommended)
+| Variable | Purpose |
+|---|---|
+| `INTERNAL_WIKI_SECRETKEY` | `$wgSecretKey` — required for ResourceLoader and sessions |
+| `INTERNAL_WIKI_UPGRADEKEY` | `$wgUpgradeKey` |
+| `INTERNAL_WIKI_TOKEN_AUTH_SALT` | Token authenticator salt |
 
-Upgrade shared infrastructure and all wikis:
+If any are missing from the wiki's `.env`, the script generates them with `openssl rand -hex 32` and adds them automatically. Without these, the wiki UI shows raw `(bs-xxxxx)` placeholder strings.
 
-```bash
-/core/core_install/upgrade-bluespice --version 5.1.3
-```
-
-#### Upgrade Specific Wiki Only
-
-Upgrade just one wiki instance:
-
-```bash
-/core/core_install/upgrade-bluespice --version 5.1.3 --wiki-only mywiki
-```
-
-#### Upgrade Wikis Without Shared Services
-
-If shared services are already upgraded:
-
-```bash
-/core/core_install/upgrade-bluespice --version 5.1.3 --skip-shared
-```
-
-## What Happens During Upgrade
-
-The upgrade process:
-
-1. **Backs up configurations**
-   - Saves `.env` files to `/tmp/bluespice-upgrade-TIMESTAMP/`
-
-2. **Pulls new Docker images**
-   - `bluespice/wiki:VERSION`
-   - `bluespice/helper:VERSION`
-   - `bluespice/database:VERSION`
-   - `bluespice/search:VERSION`
-   - `bluespice/cache:VERSION`
-
-3. **Updates shared infrastructure**
-   - Updates version in `/core/core_install/shared/.shared.env`
-   - Restarts database, search, and cache containers
-
-4. **Upgrades each wiki**
-   - Updates version in `/core/wikis/WIKI_NAME/.env`
-   - Runs upgrade pipeline using `bluespice/helper` container
-   - The upgrade pipeline:
-     - Creates backups at `/bluespice/WIKI_NAME/upgrade_backup/`
-     - Upgrades databases
-     - Upgrades filesystem
-     - Runs MediaWiki update scripts
-     - Logs to `/bluespice/WIKI_NAME/logs/backend_upgrade_5.log`
-
-## Rollback
-
-If something goes wrong, you can rollback:
-
-### Restore Configuration Files
-
-```bash
-# Restore shared configuration
-cp /tmp/bluespice-upgrade-TIMESTAMP/shared.env.backup \
-   /core/core_install/shared/.shared.env
-
-# Restore individual wiki
-cp /tmp/bluespice-upgrade-TIMESTAMP/WIKI_NAME.env.backup \
-   /core/wikis/WIKI_NAME/.env
-```
-
-### Restart Containers
-
-After restoring configuration:
-
-```bash
-# Restart shared services
-cd /core/core_install/shared
-docker compose -f docker-compose.persistent-data-services.yml up -d
-
-# Restart wiki
-cd /core/wikis/WIKI_NAME
-docker compose -f docker-compose.main.yml up -d
-```
-
-## Upgrade Options
+### 2. Pull the new Docker image
 
 ```
--v, --version VERSION    Target version (required, e.g., 5.1.3)
--f, --force              Force upgrade even if already on target version
--w, --wiki-only WIKI     Upgrade only specific wiki instance
--s, --skip-shared        Skip shared infrastructure upgrade
--b, --backup-only        Only create backups, don't upgrade
--h, --help               Show help message
+docker pull bluespice/wiki:VERSION
 ```
+
+### 3. Update `.env`
+Backs up the current `.env` to `$BACKUP_DIR`, then updates `VERSION` and `BLUESPICE_WIKI_IMAGE`.
+
+### 4. Pre-create log directories
+Creates `preupdate/` and `postupdate/` directories under `/data/bluespice/logs/` before the container starts. The BlueSpice `run-updates` pipeline writes logs here; if they don't exist, it crashes.
+
+### 5. Recreate containers
+
+```
+docker compose up -d --force-recreate
+```
+
+`/app` inside the container is ephemeral and is wiped here. Persistent data at `/data/bluespice/` (host path: `/bluespice/{WIKI_NAME}/`) is retained.
+
+### 6. Wait for container + fix log ownership
+Waits up to 120 seconds for the container to become healthy, then fixes ownership of the log directories so `run-updates` can write to them.
+
+### 7. Run MediaWiki database update
+
+```
+php /app/bluespice/w/maintenance/run.php update --quick
+```
+
+Applies any database schema changes required by the new version.
+
+### 8. Reinstall OAuth extensions
+If OAuth extensions (PluggableAuth, OpenIDConnect) were present on the host volume before the upgrade, they are reinstalled. This is necessary because:
+- `/app` is wiped on container recreate
+- The startup wrapper scripts restore extensions from `/data/bluespice/extensions/` on each start
+- After an upgrade, a fresh reinstall ensures the extension version matches the new BlueSpice version
+
+### 9. Bump wgCacheEpoch
+Updates the `$wgCacheEpoch` timestamp in `post-init-settings.php` to bust stale browser and server caches.
+
+### 10. Fix PermissionManagerActivePreset
+For Free-edition wikis: if `PermissionManagerActivePreset` is set to `custom` (which is invalid for Free edition), it resets it to `public` to prevent permission errors.
+
+### 11. Rebuild search index
+Recreates OpenSearch indices with the current BlueSpice field mappings:
+
+```
+/app/bin/rebuild-searchindex --main
+```
+
+This is required when a new BlueSpice version adds index fields (e.g. `suggestions-spellcheck` added in 5.2.x). Without it, searches throw `BadRequest400Exception` and the UI shows "Query cannot be executed, please change the search term."
+
+---
+
+## Shared Services Upgrade
+
+Unless `--skip-shared` is specified, the script also upgrades the shared services (MariaDB, OpenSearch, Memcached, Nginx) by:
+1. Updating `VERSION` in `/core/core_install/shared/.shared.env`
+2. Restarting `docker-compose.persistent-data-services.yml`
+3. Restarting `docker-compose.stateless-services.yml` + `docker-compose.proxy.yml` + `docker-compose.proxy-letsencrypt.yml`
+
+Shared services are upgraded **before** wikis so the database is running when `update.php` executes.
+
+---
+
+## All Options
+
+```
+-v, --version VERSION   Target version (default: auto-detect from Docker Hub)
+-f, --force             Re-run upgrade even if already on target version
+-w, --wiki WIKI_NAME    Upgrade only the named wiki (default: all)
+-s, --skip-shared       Skip shared services upgrade
+-n, --dry-run           Show what would be done without making changes
+-h, --help              Show help
+```
+
+---
 
 ## Examples
 
-### Standard Upgrade
+### Standard upgrade (auto-detect latest)
 
 ```bash
-# Check what's available
-/core/core_install/check-bluespice-versions
-
-# Create backup first
-/core/core_install/upgrade-bluespice --backup-only
-
-# Perform upgrade
-/core/core_install/upgrade-bluespice --version 5.1.3
+./upgrade-bluespice
 ```
 
-### Upgrade Single Wiki
-
-If you want to test on one wiki first:
+### Upgrade a single wiki first, then the rest
 
 ```bash
-# Upgrade just the test wiki
-/core/core_install/upgrade-bluespice --version 5.1.3 --wiki-only test1
+# Upgrade shared services + one wiki as a canary
+./upgrade-bluespice --version 5.2.3 --wiki mywiki
 
-# If successful, upgrade the rest
-/core/core_install/upgrade-bluespice --version 5.1.3 --skip-shared
+# If that looks good, upgrade the rest (shared services already done)
+./upgrade-bluespice --version 5.2.3 --skip-shared
 ```
 
-### Force Re-upgrade
-
-If an upgrade failed partway and you need to retry:
+### Retry a failed upgrade
 
 ```bash
-/core/core_install/upgrade-bluespice --version 5.1.3 --force
+./upgrade-bluespice --version 5.2.2 --wiki mywiki --force
 ```
+
+### Preview without changes
+
+```bash
+./upgrade-bluespice --version 5.2.3 --dry-run
+```
+
+---
+
+## Rollback
+
+If an upgrade fails:
+
+### 1. Restore the `.env` file
+
+```bash
+# Backup path is printed in the upgrade summary
+cp /tmp/bluespice-upgrade-TIMESTAMP/WIKI_NAME.env.bak \
+   /core/wikis/WIKI_NAME/.env
+```
+
+### 2. Bring the old image back up
+
+```bash
+docker compose -f /core/wikis/WIKI_NAME/docker-compose.main.yml \
+  --env-file /core/wikis/WIKI_NAME/.env \
+  up -d --force-recreate
+```
+
+### 3. Restore the database if needed
+
+```bash
+DB_ROOT_PASS=$(grep DB_ROOT_PASS /core/core_install/shared/.shared.env | cut -d= -f2)
+docker exec -i bluespice-database \
+  mariadb -uroot -p"$DB_ROOT_PASS" \
+  < /backup/pre-upgrade-YYYYMMDD.sql
+```
+
+---
 
 ## Troubleshooting
 
-### Check Upgrade Logs
+### UI shows `(bs-xxxxx)` placeholder strings
 
-Each wiki's upgrade is logged:
+`$wgSecretKey` is empty. The INTERNAL_WIKI_SECRETKEY secret is missing from the container environment. Check that:
+
+1. The secret exists in `/core/wikis/WIKI_NAME/.env`
+2. The `docker-compose.main.yml` passes it via the environment section
+3. The startup wrapper scripts at `/opt/bluespice/scripts/` call `init-envs` before restoring OAuth extensions
+
+Run `upgrade-bluespice --force` to regenerate missing secrets and re-run all steps.
+
+### Search returns "Query cannot be executed"
+
+The OpenSearch index was built with old field mappings. Rebuild it:
 
 ```bash
-# View upgrade log
-cat /bluespice/WIKI_NAME/logs/backend_upgrade_5.log
-
-# View upgrade backup
-ls -la /bluespice/WIKI_NAME/upgrade_backup/
+docker exec bluespice-WIKI_NAME-wiki-web /app/bin/rebuild-searchindex --main
 ```
 
-### Check Container Status
+### Container fails to start after upgrade
 
 ```bash
-# View all BlueSpice containers
-docker ps -a | grep bluespice
-
-# Check specific container logs
 docker logs bluespice-WIKI_NAME-wiki-web
-docker logs bluespice-database
+docker logs bluespice-WIKI_NAME-wiki-task
 ```
 
-### Verify Database Connection
+Common cause: `run-updates` crashing because log directories don't exist. Create them manually:
 
 ```bash
-# Test database connectivity
-docker exec bluespice-database mariadb -uroot -p -e "SHOW DATABASES;"
+mkdir -p /bluespice/WIKI_NAME/logs/preupdate /bluespice/WIKI_NAME/logs/postupdate
+docker exec --user root bluespice-WIKI_NAME-wiki-web \
+  chown 1002:bluespice /data/bluespice/logs/preupdate /data/bluespice/logs/postupdate
 ```
 
-### Manual Maintenance Commands
+### OAuth login broken after upgrade
 
-If you need to run maintenance commands manually:
+The startup wrapper scripts restore OAuth extensions from `/bluespice/WIKI_NAME/extensions/`. If the host volume copy is missing or outdated, reinstall:
 
 ```bash
-# Enter wiki container
-docker exec -it bluespice-WIKI_NAME-wiki-web bash
-
-# Inside container
-cd /app/bluespice/w
-
-# Run update script
-php maintenance/run.php update --quick
-
-# Rebuild search index
-php extensions/BlueSpiceExtendedSearch/maintenance/updateWikiPageIndex.php
+./upgrade-bluespice --version 5.2.2 --wiki WIKI_NAME --force
 ```
 
-## Best Practices
+Or reinstall manually by running `initialize-wiki` in restore mode, or by calling `install_auth_extensions` from the `oauth-config.sh` library.
 
-1. **Always backup before upgrading**
-   ```bash
-   /core/core_install/upgrade-bluespice --backup-only
-   ```
+### Check what version is actually running
 
-2. **Test on development wiki first**
-   ```bash
-   /core/core_install/upgrade-bluespice --version VERSION --wiki-only development
-   ```
+```bash
+docker exec bluespice-WIKI_NAME-wiki-web cat /app/bluespice/w/BLUESPICE-VERSION
+```
 
-3. **Upgrade during low-traffic period**
+### Verify wgSecretKey is set in a running container
 
-4. **Monitor logs during upgrade**
-   ```bash
-   # In another terminal
-   docker logs -f bluespice-WIKI_NAME-wiki-web
-   ```
+```bash
+docker exec bluespice-WIKI_NAME-wiki-web \
+  php -r 'echo empty(getenv("INTERNAL_WIKI_SECRETKEY")) ? "MISSING\n" : "OK\n";'
+```
 
-5. **Verify after upgrade**
-   ```bash
-   /core/core_install/check-bluespice-versions
-   ```
+---
 
-## Version Compatibility
+## Container Architecture Notes
 
-- Your system currently uses **BlueSpice 5.1**
-- Latest stable: **5.1.3**
-- Upcoming: **5.2** (early 2026)
-
-Minor version upgrades (e.g., 5.1 → 5.1.3) are typically safe and recommended.
-
-Major version upgrades (e.g., 5.1 → 5.2) may require additional testing and preparation.
-
-## Getting Help
-
-- Check upgrade logs: `/bluespice/WIKI_NAME/logs/backend_upgrade_5.log`
-- Check container logs: `docker logs bluespice-WIKI_NAME-wiki-web`
-- View backup location from upgrade output
-- BlueSpice documentation: https://en.wiki.bluespice.com/
-
-## Additional Notes
-
-- The upgrade script uses the same upgrade mechanism as `bluespice-deploy`
-- Upgrades are non-destructive - backups are created automatically
-- Database schema changes are handled by the upgrade pipeline
-- Search indices are rebuilt as needed during upgrade
-- No downtime is required for shared services if wikis are upgraded individually
+- `/app` inside the container is **ephemeral** — it is reset to the image contents on every `docker compose up --force-recreate`
+- `/data/bluespice/` (container) = `/bluespice/WIKI_NAME/` (host) — this is the **persistent** volume
+- The entrypoint wrapper scripts at `/opt/bluespice/scripts/` override the official entrypoint and must:
+  1. Call `init-envs` to populate `/app/.env` with secrets
+  2. Source `/app/.env` to export the secrets into the shell environment
+  3. Restore OAuth extensions from persistent storage
+  4. Exec the original `start-web` or `start-task` script
+- BlueSpice 5.2.x `LocalSettings.php` is at `/app/conf/LocalSettings.php` and is fully environment-variable driven

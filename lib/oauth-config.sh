@@ -2,17 +2,7 @@
 
 # OAuth extension management for BlueSpice MediaWiki
 # Handles installation and configuration of authentication extensions
-
-set -euo pipefail
-
-# Source required libraries
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/lib/docker-utils.sh"
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/lib/validation.sh"
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/lib/init-settings-config.sh"
-
+# NOTE: This file is sourced by other scripts; do not use set -euo pipefail here.
 
 # Check if authentication extensions need to be installed
 check_auth_extensions_needed() {
@@ -67,7 +57,7 @@ extract_extension() {
     
     log_info "  📦 Extracting $extension_name..."
     
-    cd "$temp_dir"
+    cd "$temp_dir" || return 1
     if ! tar -xzf "${extension_name}.tar.gz"; then
         log_error "  ❌ Failed to extract $extension_name"
         return 1
@@ -146,86 +136,76 @@ install_auth_extensions() {
     if ! docker_copy_to_container "$wiki_name" "$temp_dir/OpenIDConnect" "/data/bluespice/extensions/"; then log_warn "⚠️ Failed to copy OpenIDConnect to persistent /data; continuing"; fi
     docker_exec_safe "$wiki_name" chown -R bluespice:bluespice /data/bluespice/extensions >/dev/null 2>&1 || true
     docker_exec_safe "$wiki_name" chmod -R g+rwX /data/bluespice/extensions >/dev/null 2>&1 || true
-    echo "  📋 Installing extensions in container..."
-    if ! docker_copy_to_container "$wiki_name" "$temp_dir/PluggableAuth" "/app/bluespice/w/extensions/"; then
-        log_error "❌ Failed to copy PluggableAuth to container" >&2
-        return 1
-    fi
 
-    if ! docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/PluggableAuth"; then
-        log_error "❌ Failed to set ownership for PluggableAuth in container" >&2
-        return 1
-    fi
-
-    if ! docker_copy_to_container "$wiki_name" "$temp_dir/OpenIDConnect" "/app/bluespice/w/extensions/"; then
-        log_error "❌ Failed to copy OpenIDConnect to container" >&2
-        return 1
-    fi
-
-    if ! docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/OpenIDConnect"; then
-        log_error "❌ Failed to set ownership for OpenIDConnect in container" >&2
-        return 1
-    fi
-
-    # Install Composer in the container if not already present
-    log_info "  📦 Installing Composer in container..."
-    if ! docker_exec_safe "$wiki_name" test -f /app/bluespice/w/composer.phar 2>/dev/null; then
-        log_info "  📥 Downloading and installing Composer using official method..."
+    # Install Composer to persistent storage if not already present.
+    # Installing here (not to /app) ensures composer.phar survives container recreation.
+    log_info "  📦 Installing Composer..."
+    if ! docker_exec_safe "$wiki_name" "test -f /data/bluespice/extensions/composer.phar" 2>/dev/null; then
+        log_info "  📥 Downloading Composer..."
         if docker_exec_safe "$wiki_name" "
-            cd /app/bluespice/w &&
-            php -r \"copy('https://getcomposer.org/installer', 'composer-setup.php');\" &&
-            php -r \"copy('https://composer.github.io/installer.sig', 'composer-setup.sig');\" &&
-            php -r \"\\\$expected_hash = trim(file_get_contents('composer-setup.sig')); \\\$actual_hash = hash_file('sha384', 'composer-setup.php'); if (\\\$actual_hash === \\\$expected_hash) { echo 'Installer verified'.PHP_EOL; } else { echo 'Installer corrupt: expected '.\\\$expected_hash.' but got '.\\\$actual_hash.PHP_EOL; unlink('composer-setup.php'); unlink('composer-setup.sig'); exit(1); }\" &&
-            php composer-setup.php &&
-            php -r \"unlink('composer-setup.php'); if (file_exists('composer-setup.sig')) unlink('composer-setup.sig');\" &&
-            ls -la composer.phar
-        " 2>/dev/null; then
-            echo "  ✓ Composer installed successfully at /app/bluespice/w/composer.phar"
+            php -r \"copy('https://getcomposer.org/installer', '/tmp/composer-setup.php');\" &&
+            php /tmp/composer-setup.php --install-dir=/data/bluespice/extensions --filename=composer.phar &&
+            php -r \"unlink('/tmp/composer-setup.php');\"
+        "; then
+            log_info "  ✓ Composer installed to persistent storage"
         else
-            log_error "  ❌ Failed to install Composer using official method"
+            log_error "  ❌ Failed to install Composer"
             return 1
         fi
     fi
 
-    # Install OpenIDConnect PHP dependencies
+    # Install OpenIDConnect PHP dependencies into persistent storage.
+    # Running Composer here (not against /app) means vendor/ is saved to the host
+    # volume and will be included when the startup script restores extensions on restart.
     log_info "  📦 Installing OpenIDConnect PHP dependencies..."
-    if docker_exec_safe "$wiki_name" "cd /app/bluespice/w/extensions/OpenIDConnect && php /app/bluespice/w/composer.phar install --no-dev --ignore-platform-reqs"; then
-        log_info "  ✓ OpenIDConnect dependencies installed successfully"
-    elif docker_exec_safe "$wiki_name" "cd /app/bluespice/w/extensions/OpenIDConnect && /app/bluespice/w/composer.phar install --ignore-platform-reqs"; then
-        log_info "  ✓ OpenIDConnect dependencies installed successfully (method 2)"
-    else
+    if ! docker_exec_safe "$wiki_name" "cd /data/bluespice/extensions/OpenIDConnect && php /data/bluespice/extensions/composer.phar install --no-dev --ignore-platform-reqs"; then
         log_error "  ❌ Composer install failed"
         return 1
     fi
+    log_info "  ✓ OpenIDConnect dependencies installed"
 
-    # Check if both extension.json files exist
+    # Fix ownership on persistent extensions now that vendor/ has been written
+    docker_exec_safe "$wiki_name" chown -R bluespice:bluespice /data/bluespice/extensions >/dev/null 2>&1 || true
+
+    # Copy the complete extensions (including vendor/) to the active /app path for
+    # immediate use. On future container restarts the startup script handles this.
+    log_info "  📋 Activating extensions in container..."
+    if ! docker_exec_safe "$wiki_name" "rm -rf /app/bluespice/w/extensions/PluggableAuth && cp -r /data/bluespice/extensions/PluggableAuth /app/bluespice/w/extensions/PluggableAuth"; then
+        log_error "❌ Failed to activate PluggableAuth" >&2
+        return 1
+    fi
+    if ! docker_exec_safe "$wiki_name" "rm -rf /app/bluespice/w/extensions/OpenIDConnect && cp -r /data/bluespice/extensions/OpenIDConnect /app/bluespice/w/extensions/OpenIDConnect"; then
+        log_error "❌ Failed to activate OpenIDConnect" >&2
+        return 1
+    fi
+    docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/PluggableAuth"
+    docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/OpenIDConnect"
+
+    # Verify all required files are present
     if ! docker_exec_safe "$wiki_name" "test -f /app/bluespice/w/extensions/PluggableAuth/extension.json"; then
         log_error "❌ PluggableAuth extension.json not found"
         return 1
     fi
-    
     if ! docker_exec_safe "$wiki_name" "test -f /app/bluespice/w/extensions/OpenIDConnect/extension.json"; then
         log_error "❌ OpenIDConnect extension.json not found"
+        return 1
+    fi
+    if ! docker_exec_safe "$wiki_name" "test -f /app/bluespice/w/extensions/OpenIDConnect/vendor/autoload.php"; then
+        log_error "❌ OpenIDConnect vendor/autoload.php not found"
         return 1
     fi
 
     cd /
     [[ -n "${temp_dir:-}" ]] && rm -rf "$temp_dir"
 
-    if docker_exec_safe "$wiki_name" "cd /app/bluespice/w && php composer.phar dump-autoload --optimize --no-scripts" 2>/dev/null; then
-        echo "  ✓ Composer autoload rebuilt"
-    else
-        log_error "  ❌ Failed to rebuild Composer autoload"
-        return 1
-    fi
-
+    log_info "  ✓ OAuth extensions installed and activated"
     return 0
 }
 
 # Complete OAuth setup process
 setup_oauth_extensions() {
     local wiki_name="$1"
-    local wiki_dir="$2"
+    # $2 (wiki_dir) is accepted for API compatibility but not used internally
     local wiki_domain="$3"
     
     log_info "🚀 Starting OAuth extension setup for $wiki_name..."
@@ -245,33 +225,6 @@ setup_oauth_extensions() {
         fi
         
         log_info "✅ OAuth extension setup completed successfully"
-    else
-        log_info "ℹ️ Authentication extensions already configured"
-    fi
-    
-    return 0
-}
-# Setup OAuth extensions with automatic credential extraction for upgrades
-setup_oauth_extensions_for_upgrade() {
-    local wiki_name="$1"
-    local wiki_dir="$2"
-    local wiki_domain="$3"
-    
-    log_info "🚀 Starting OAuth extension setup for $wiki_name (upgrade mode)..."
-    
-    # Check if extensions need to be installed
-    if check_auth_extensions_needed "$wiki_name"; then
-        # Install extensions
-        if ! install_auth_extensions "$wiki_name"; then
-            log_error "❌ Failed to install authentication extensions"
-            return 1
-        fi
-        
-        # OAuth provider credentials are stored in the wiki DB (ConfigManager UI)
-        # and do not need to be re-extracted or re-written during upgrades.
-        log_info "✅ OAuth extensions installed; provider config preserved in DB"
-        
-        log_info "✅ OAuth extension setup completed"
     else
         log_info "ℹ️ Authentication extensions already configured"
     fi

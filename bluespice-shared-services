@@ -91,11 +91,12 @@ USAGE:
 
 COMMANDS:
     up          Start all shared services (default)
-    down        Stop and remove all shared services  
-    status      Show service status using Docker Compose
-    ps          Show container status using Docker Compose
-    logs        Show service logs using Docker Compose
+    down        Stop and remove all shared services
+    status      Show container status (alias: ps)
+    ps          Show container status (alias: status)
+    logs        Show service logs
     restart     Restart all shared services
+    health      Run docker compose up -d to reconcile and show health
     --help, -h  Show this help message
 
 EXAMPLES:
@@ -103,7 +104,7 @@ EXAMPLES:
     ./bluespice-shared-services down
     ./bluespice-shared-services status
     ./bluespice-shared-services logs
-    ./bluespice-shared-services ps
+    ./bluespice-shared-services restart
 
 SERVICES MANAGED:
     - bluespice-database       MariaDB database server

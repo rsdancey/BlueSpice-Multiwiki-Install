@@ -23,95 +23,53 @@ BlueSpice Wiki Deployment Script
 ===============================
 
 SYNOPSIS:
-    ./bluespice-deploy-wiki --wiki-name=NAME [OPTIONS]
+    ./bluespice-deploy-wiki --wiki-name=NAME [--fresh-install]
 
 DESCRIPTION:
-    Deploys and manages BlueSpice wiki instances with enhanced database connectivity,
-    network connection support, and automated configuration management.
+    Deploys a BlueSpice wiki instance. Used by initialize-wiki for fresh
+    installations. For upgrades, use upgrade-bluespice instead.
 
 REQUIRED ARGUMENTS:
     --wiki-name=NAME        Name of the wiki instance to deploy/manage
-                           Must match an existing wiki directory in /core/wikis/
+                            Must match an existing wiki directory in /core/wikis/
 
 OPTIONS:
-    --fresh-install        Perform a fresh installation (removes existing data)
-    --run-update          Run update/upgrade procedures on existing wiki
-    --profile=upgrade     Run standard upgrade pipeline
-    --profile=upgrade-force   Force upgrade pipeline (use with caution)
-    -h, --help            Show this help message and exit
+    --fresh-install         Perform a fresh installation: create DB, run install,
+                            start containers
+    -h, --help              Show this help message and exit
 
-FEATURES:
-    • Enhanced network connection management for improved database performance
-    • Unique database user creation per wiki instance (e.g., wikiname_user)
-    • Comprehensive health checks and verification procedures
-    • SSL certificate integration and management
-    • Email/SMTP configuration validation
-    • Automated service orchestration with Docker Compose
+DEPLOYMENT PROCESS (--fresh-install):
+    1. Create host-side data directories (/bluespice/WIKI_NAME/)
+    2. Start wiki-web and wiki-task containers
+    3. Create database and DB user
+    4. Generate admin password
+    5. Run BlueSpice installation (install.php)
+    6. Start wiki-task container
 
-DEPLOYMENT PROCESS:
-    1. Environment validation and configuration loading
-    2. Database connectivity verification
-    3. Unique user authentication setup with network connections
-    4. MediaWiki installation/update procedures
-    5. BlueSpice-specific configuration and extensions
-    6. Service health checks and verification
-    7. Post-deployment cleanup and optimization
-
-DATABASE CONNECTIVITY:
-    • Uses direct database host connections
-    • Creates unique database users per wiki (PREFIX_user format)
-    • Enhanced database user management
-    • Enhanced error handling for connection issues
-    • Improved performance through local socket communication
-
-UPGRADE PROFILES:
-    upgrade         Standard upgrade process with safety checks
-    upgrade-force   Forced upgrade bypassing some safety checks
-                   (Use only when standard upgrade fails)
+WITHOUT --fresh-install:
+    Starts existing wiki containers (docker compose up -d).
 
 EXAMPLES:
-    # Deploy a new wiki instance
-    ./bluespice-deploy-wiki --wiki-name=my-wiki --fresh-install
+    # Install a new wiki (called by initialize-wiki)
+    ./bluespice-deploy-wiki --wiki-name=mywiki --fresh-install
 
-    # Update an existing wiki
-    ./bluespice-deploy-wiki --wiki-name=my-wiki --run-update
-
-    # Perform standard upgrade
-    ./bluespice-deploy-wiki --wiki-name=my-wiki --profile=upgrade
-
-    # Force upgrade (emergency use)
-    ./bluespice-deploy-wiki --wiki-name=my-wiki --profile=upgrade-force
+    # Start an existing wiki
+    ./bluespice-deploy-wiki --wiki-name=mywiki
 
     # Show help
     ./bluespice-deploy-wiki --help
 
 PREREQUISITES:
-    • Wiki instance directory must exist in /core/wikis/WIKI_NAME/
-    • Valid .env configuration file in the wiki directory
-    • BlueSpice database service must be running and accessible
-    • Docker and Docker Compose must be available
-    • Sufficient disk space and memory resources
+    • Wiki config directory must exist: /core/wikis/WIKI_NAME/
+    • Valid .env file in the wiki directory
+    • Shared services running (bluespice-database, bluespice-proxy)
+    • Docker and Docker Compose available
 
-FILES AND DIRECTORIES:
-    /core/wikis/WIKI_NAME/.env              Environment configuration
-    /core/wikis/WIKI_NAME/docker-compose.*  Service orchestration files
-    ${DATA_DIR}/${WIKI_NAME}/initialAdminPassword Generated admin credentials
-    /bluespice/                             Persistent data storage
-
-TROUBLESHOOTING:
-    • Database connection issues: Check socket connectivity and user permissions
-    • Service startup failures: Verify Docker daemon and resource availability
-    • SSL problems: Check certificate validity and Let's Encrypt configuration
-    • Permission errors: Ensure proper directory ownership and Docker access
-
-EXIT CODES:
-    0   Success
-    1   General error (invalid arguments, missing requirements)
-    2   Database connectivity failure
-    3   Service deployment failure
-    4   Configuration validation failure
-
-For more information, see the BlueSpice documentation or contact support.
+FILES:
+    /core/wikis/WIKI_NAME/.env              Wiki configuration and secrets
+    /core/wikis/WIKI_NAME/docker-compose.main.yml  Container definition
+    /bluespice/WIKI_NAME/initialAdminPassword       Generated admin credentials
+    /bluespice/WIKI_NAME/                   Persistent wiki data volume
 HELP
 }
 
@@ -466,6 +424,7 @@ load_environment() {
     local wiki_dir="/core/wikis/${WIKI_NAME}"
     if [[ -f "$wiki_dir/.env" ]]; then
         set -a
+        # shellcheck source=/dev/null
         source "$wiki_dir/.env"
         set +a
         log_info "Environment loaded from $wiki_dir/.env"

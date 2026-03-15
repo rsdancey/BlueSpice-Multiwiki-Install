@@ -107,28 +107,28 @@ POST-INSTALLATION:
     Initial admin credentials are saved in the wiki directory.
 
 MANAGEMENT COMMANDS:
-    Start wiki:     ./bluespice-deploy-wiki --wiki-name=NAME --domain=DOMAIN
-    Stop wiki:      docker compose -f /core/wikis/NAME/docker-compose.yml down
-    Update wiki:    ./bluespice-deploy-wiki --wiki-name=NAME --run-update
+    Start wiki:     ./bluespice-deploy-wiki --wiki-name=NAME --fresh-install
+    Stop wiki:      docker compose -f /core/wikis/NAME/docker-compose.main.yml down
+    Upgrade wiki:   ./upgrade-bluespice --wiki NAME
     Test email:     docker exec bluespice-NAME-wiki-web php /app/bluespice/w/maintenance/sendTestEmail.php --to=email@domain.com
 
 EXAMPLES:
     ./initialize-wiki                    # Interactive setup mode
-    ./initialize-wiki --help            # Show this help message
-    
+    ./initialize-wiki --help             # Show this help message
+
     # Email testing examples:
-    docker exec bluespice-Projects-wiki-web php /app/bluespice/w/maintenance/sendTestEmail.php \
+    docker exec bluespice-NAME-wiki-web php /app/bluespice/w/maintenance/sendTestEmail.php \
         --to="user@example.com" --subject="Test Email"
-    
-    docker exec bluespice-Projects-wiki-web php /app/bluespice/w/maintenance/sendTestEmail.php \
+
+    docker exec bluespice-NAME-wiki-web php /app/bluespice/w/maintenance/sendTestEmail.php \
         --to="user@example.com" --from="wiki@domain.com" --subject="Custom Sender Test"
 
 FILES AND DIRECTORIES:
-    /core/wikis/WIKI_NAME/              # Wiki instance directory
-    /core/wikis/WIKI_NAME/.env          # Environment configuration
+    /core/wikis/WIKI_NAME/              # Wiki instance config directory
+    /core/wikis/WIKI_NAME/.env          # Environment configuration and secrets
     /core/wikis/WIKI_NAME/pre-init-settings.php   # MediaWiki pre-initialization settings
     /core/wikis/WIKI_NAME/post-init-settings.php  # MediaWiki post-initialization settings
-    /core/wikis/WIKI_NAME/initialAdminPassword     # Generated admin password
+    /bluespice/WIKI_NAME/initialAdminPassword      # Generated admin password (in data volume)
 
 REQUIREMENTS:
     • Docker and Docker Compose installed and running
@@ -168,13 +168,13 @@ load_environment() {
     local wiki_dir="$1"
     if [[ -f "$wiki_dir/.env" ]]; then
         set -a
+        # shellcheck source=/dev/null
         source "$wiki_dir/.env"
         set +a
         log_info "Environment loaded from $wiki_dir/.env"
-        
+
         # Load shared environment for database credentials
         if [[ -f "${SCRIPT_DIR}/shared/.shared.env" ]]; then
-            # shellcheck source=/dev/null
             # Preserve wiki DATA_DIR before loading shared environment
             WIKI_DATA_DIR="$DATA_DIR"
             # shellcheck source=/dev/null
@@ -184,7 +184,6 @@ load_environment() {
         fi
         
         # Set default values for missing variables
-        WIKI_FQDN="${WIKI_HOST:-${VIRTUAL_HOST:-localhost}}"
         DB_ROOT_USER="${DB_ROOT_USER:-root}"
         WIKI_LANG="${WIKI_LANG:-en}"
         
@@ -420,9 +419,9 @@ show_completion_info() {
 
     echo
     echo "Management commands:"
-    echo "  Start:  ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --domain=$WIKI_DOMAIN"
-    echo "  Stop:   docker compose -f /core/wikis/$WIKI_NAME/docker-compose.helper-service.yml -f /core/wikis/$WIKI_NAME/docker-compose.main.yml down"
-    echo "  Update: ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --domain=$WIKI_DOMAIN --run-update"
+    echo "  Start:   ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --fresh-install"
+    echo "  Stop:    docker compose -f /core/wikis/$WIKI_NAME/docker-compose.main.yml down"
+    echo "  Upgrade: ./upgrade-bluespice --wiki $WIKI_NAME"
     echo
     
     return 0
