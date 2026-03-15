@@ -8,7 +8,7 @@ x-common-config: &common-config
   deploy:
     resources:
       limits:
-        cpus: '1.0'
+        cpus: 1.0
         memory: 1G
       reservations:
         memory: 512M
@@ -17,7 +17,7 @@ services:
   search-permissions:
     image: busybox:latest
     volumes:
-      - ${DATA_DIR}/search:/data
+      - /search:/data
     command: chown -R 1000:1000 /data
     restart: "no"
     labels:
@@ -25,13 +25,13 @@ services:
       com.bluespice.type: "init"
 
   search:
-    image: ${BLUESPICE_SERVICE_REPOSITORY}/search:${VERSION}
+    image: /search:
     container_name: bluespice-search
     restart: unless-stopped
     networks:
       - bluespice-network
     volumes:
-      - ${DATA_DIR}/search:/usr/share/opensearch/data
+      - /search:/usr/share/opensearch/data
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
@@ -62,7 +62,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          # Tighter memory cap for this host (was 1.5G)
           memory: 1.25G
         reservations:
           memory: 512M
@@ -73,7 +73,7 @@ services:
   database-permissions:
     image: busybox:latest
     volumes:
-      - ${DATA_DIR}/database:/data
+      - /database:/data
     command: sh -c "chown -R 911:911 /data && chmod -R 755 /data"
     restart: "no"
     labels:
@@ -81,17 +81,17 @@ services:
       com.bluespice.type: "init"
 
   database:
-    image: ${BLUESPICE_SERVICE_REPOSITORY}/database:${VERSION}
+    image: /database:
     container_name: bluespice-database
     restart: unless-stopped
     networks:
       - bluespice-network
     volumes:
-      - ${DATA_DIR}/database/logs:/config/log/mysql
-      - ${DATA_DIR}/database/data:/config/databases
+      - /database/logs:/config/log/mysql
+      - /database/data:/config/databases
       - ./mariadb-custom.cnf:/config/custom.cnf:ro
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
+      - MYSQL_ROOT_PASSWORD=
       - MYSQL_RANDOM_ROOT_PASSWORD=no
       - MYSQL_ALLOW_EMPTY_PASSWORD=no
       - MYSQL_INITDB_SKIP_TZINFO=1
@@ -111,7 +111,7 @@ services:
       com.bluespice.type: "persistent-data"
 
   cache:
-    image: ${BLUESPICE_SERVICE_REPOSITORY}/cache:${VERSION}
+    image: /cache:
     container_name: bluespice-cache
     restart: unless-stopped
     networks:

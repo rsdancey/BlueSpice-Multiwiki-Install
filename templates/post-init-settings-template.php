@@ -100,8 +100,8 @@ if ( file_exists( $pluggableAuthPath . '/extension.json' ) ) {
     $wgPluggableAuth_EnableLocalLogin = true;
     $wgPluggableAuth_EnableAutoLogin = false;
 
-    # autocreateaccount must be true for PluggableAuth to link SSO sessions to local accounts
-    $wgGroupPermissions['*']['autocreateaccount'] = true;
+    # autocreateaccount=false: SSO logins are only permitted for existing accounts (created by admin)
+    $wgGroupPermissions['*']['autocreateaccount'] = false;
     # Prevent manual self-registration via Special:CreateAccount
     $wgGroupPermissions['*']['createaccount'] = false;
 
