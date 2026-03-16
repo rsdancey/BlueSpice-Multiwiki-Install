@@ -25,7 +25,10 @@ $wgObjectCacheSessionExpiry = 28800;
 # sets a tmp directory other than the default                                                                                         
 $wgTmpDirectory = "/tmp/wiki";     
 
-# BlueSpice Extended Search Backend Configuration                                                                                     
+# BlueSpice Permission Manager Presets
+$GLOBALS['bsgOverridePermissionManagerAllowedPresets'] = [ 'public', 'protected', 'private', 'custom' ];
+
+# BlueSpice Extended Search Backend Configuration
 $GLOBALS["bsgESBackendHost"] = "bluespice-search";                                                                                    
 $GLOBALS["bsgESBackendPort"] = "9200";                                                                                                
 $GLOBALS["bsgESBackendTransport"] = "http";                                                                                           
