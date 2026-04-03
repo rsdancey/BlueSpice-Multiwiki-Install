@@ -28,6 +28,17 @@ $wgTmpDirectory = "/tmp/wiki";
 # BlueSpice Permission Manager Presets
 $GLOBALS['bsgOverridePermissionManagerAllowedPresets'] = [ 'public', 'protected', 'private', 'custom' ];
 
+# ============================================
+# Wire WebSocket Service
+# ============================================
+# The bluespice/wiki container always sets mwsgWireServiceWebsocketUrl to
+# $wgServer./_wire, even when the optional bluespice/wire service is not
+# deployed. This causes every open browser tab to enter a tight reconnect
+# loop (token generate + HTTP request every ~3s), consuming PHP-FPM workers
+# and CPU on all wikis. Override it to empty here since we do not run the
+# wire service.
+$GLOBALS['mwsgWireServiceWebsocketUrl'] = '';
+
 # BlueSpice Extended Search Backend Configuration
 $GLOBALS["bsgESBackendHost"] = "bluespice-search";                                                                                    
 $GLOBALS["bsgESBackendPort"] = "9200";                                                                                                

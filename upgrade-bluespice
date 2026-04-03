@@ -241,6 +241,39 @@ update_cache_epoch() {
     log_info "  Set wgCacheEpoch=$epoch in $(basename "$post_init_file")"
 }
 
+# Ensure mwsgWireServiceWebsocketUrl is disabled in post-init-settings.php.
+# The bluespice/wiki container always sets this to $wgServer/_wire even when
+# the optional bluespice/wire service is not deployed, causing every open
+# browser tab to loop with token+HTTP requests every ~3s, consuming PHP-FPM
+# workers and CPU. This fix is idempotent and safe to run on every upgrade.
+fix_wire_websocket_url() {
+    local post_init_file="$1"
+
+    if [[ ! -f "$post_init_file" ]]; then
+        return 0
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "  [DRY RUN] Would disable mwsgWireServiceWebsocketUrl in $(basename "$post_init_file")"
+        return 0
+    fi
+
+    if grep -q "mwsgWireServiceWebsocketUrl" "$post_init_file"; then
+        log_info "  mwsgWireServiceWebsocketUrl already set in $(basename "$post_init_file") — skipping"
+        return 0
+    fi
+
+    cat >> "$post_init_file" <<'PHP'
+
+# Disable the wire WebSocket URL: the bluespice/wiki container unconditionally
+# sets this to $wgServer/_wire even when the bluespice/wire service is not
+# deployed. Without this override every open browser tab enters a reconnect
+# loop that wastes PHP-FPM workers and CPU.
+$GLOBALS['mwsgWireServiceWebsocketUrl'] = '';
+PHP
+    log_info "  Disabled mwsgWireServiceWebsocketUrl in $(basename "$post_init_file")"
+}
+
 # ============================================================
 # Wiki upgrade
 # ============================================================
@@ -309,8 +342,9 @@ upgrade_wiki() {
         log_info "    7.  php maintenance/run.php update --quick"
         [[ "$had_oauth" == "true" ]] && log_info "    8.  install_auth_extensions"
         log_info "    9.  Update wgCacheEpoch in post-init-settings.php"
+        log_info "    10. Disable mwsgWireServiceWebsocketUrl in post-init-settings.php"
         [[ "$edition" == "free" ]] && log_info "    10. Check/fix PermissionManagerActivePreset"
-        log_info "    11. Rebuild search index"
+        log_info "    12. Rebuild search index"
         return 0
     fi
 
@@ -400,12 +434,15 @@ upgrade_wiki() {
     local post_init_file="${data_dir}/${wiki_name}/post-init-settings.php"
     update_cache_epoch "$post_init_file"
 
-    # --- Step 10: Fix PermissionManagerActivePreset for Free edition ---
+    # --- Step 10: Disable wire WebSocket URL ---
+    fix_wire_websocket_url "$post_init_file"
+
+    # --- Step 11: Fix PermissionManagerActivePreset for Free edition ---
     if [[ "$edition" == "free" ]] && [[ -n "$db_name" ]]; then
         fix_permission_manager_preset "$db_name" "$db_user" "$db_pass"
     fi
 
-    # --- Step 11: Rebuild search index ---
+    # --- Step 12: Rebuild search index ---
     # New BlueSpice versions may add index fields (e.g. suggestions-spellcheck) that
     # require a full rebuild to create the updated mapping. Without this, searches
     # throw BadRequest400Exception and show "Query cannot be executed" in the UI.
