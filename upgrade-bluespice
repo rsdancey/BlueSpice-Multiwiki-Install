@@ -274,6 +274,38 @@ PHP
     log_info "  Disabled mwsgWireServiceWebsocketUrl in $(basename "$post_init_file")"
 }
 
+# Ensure wgParserCacheType uses memcached in post-init-settings.php.
+# The bluespice/wiki container sets wgParserCacheType = CACHE_NONE by default,
+# forcing a full re-parse on every page view and post-save page load. Since
+# memcached is always configured in these deployments, enabling the parser
+# cache is safe and significantly reduces page load times. Idempotent.
+fix_parser_cache() {
+    local post_init_file="$1"
+
+    if [[ ! -f "$post_init_file" ]]; then
+        return 0
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "  [DRY RUN] Would enable parser cache in $(basename "$post_init_file")"
+        return 0
+    fi
+
+    if grep -q "wgParserCacheType" "$post_init_file"; then
+        log_info "  wgParserCacheType already set in $(basename "$post_init_file") — skipping"
+        return 0
+    fi
+
+    cat >> "$post_init_file" <<'PHP'
+
+# Enable parser cache using the already-configured memcached backend.
+# The bluespice/wiki container sets wgParserCacheType = CACHE_NONE by default,
+# forcing a full wikitext re-parse on every page view and post-save page load.
+$GLOBALS['wgParserCacheType'] = CACHE_MEMCACHED;
+PHP
+    log_info "  Enabled parser cache (CACHE_MEMCACHED) in $(basename "$post_init_file")"
+}
+
 # ============================================================
 # Wiki upgrade
 # ============================================================
@@ -343,8 +375,9 @@ upgrade_wiki() {
         [[ "$had_oauth" == "true" ]] && log_info "    8.  install_auth_extensions"
         log_info "    9.  Update wgCacheEpoch in post-init-settings.php"
         log_info "    10. Disable mwsgWireServiceWebsocketUrl in post-init-settings.php"
+        log_info "    11. Enable parser cache (CACHE_MEMCACHED) in post-init-settings.php"
         [[ "$edition" == "free" ]] && log_info "    10. Check/fix PermissionManagerActivePreset"
-        log_info "    12. Rebuild search index"
+        log_info "    13. Rebuild search index"
         return 0
     fi
 
@@ -437,12 +470,15 @@ upgrade_wiki() {
     # --- Step 10: Disable wire WebSocket URL ---
     fix_wire_websocket_url "$post_init_file"
 
-    # --- Step 11: Fix PermissionManagerActivePreset for Free edition ---
+    # --- Step 11: Enable parser cache ---
+    fix_parser_cache "$post_init_file"
+
+    # --- Step 12: Fix PermissionManagerActivePreset for Free edition ---
     if [[ "$edition" == "free" ]] && [[ -n "$db_name" ]]; then
         fix_permission_manager_preset "$db_name" "$db_user" "$db_pass"
     fi
 
-    # --- Step 12: Rebuild search index ---
+    # --- Step 13: Rebuild search index ---
     # New BlueSpice versions may add index fields (e.g. suggestions-spellcheck) that
     # require a full rebuild to create the updated mapping. Without this, searches
     # throw BadRequest400Exception and show "Query cannot be executed" in the UI.

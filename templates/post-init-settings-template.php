@@ -39,6 +39,16 @@ $GLOBALS['bsgOverridePermissionManagerAllowedPresets'] = [ 'public', 'protected'
 # wire service.
 $GLOBALS['mwsgWireServiceWebsocketUrl'] = '';
 
+
+# ============================================
+# Parser Cache
+# ============================================
+# The bluespice/wiki container sets wgParserCacheType = CACHE_NONE by default,
+# forcing a full wikitext re-parse on every page view and post-save page load.
+# With memcached already configured as the main cache backend, enabling the
+# parser cache here significantly reduces page load times (especially for
+# large pages) at no extra cost.
+$GLOBALS['wgParserCacheType'] = CACHE_MEMCACHED;
 # BlueSpice Extended Search Backend Configuration
 $GLOBALS["bsgESBackendHost"] = "bluespice-search";                                                                                    
 $GLOBALS["bsgESBackendPort"] = "9200";                                                                                                
