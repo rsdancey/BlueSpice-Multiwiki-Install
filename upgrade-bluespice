@@ -183,6 +183,70 @@ PYEOF
     fi
 }
 
+# Ensure a volume mount appears in BOTH service blocks of a docker-compose file.
+# host_path and container_path are the two sides of the mount.
+ensure_compose_volume_mount() {
+    local compose_file="$1"
+    local host_path="$2"
+    local container_path="$3"
+
+    local search_str="${host_path}:${container_path}"
+    local count
+    count=$(grep -cF "$search_str" "$compose_file" 2>/dev/null || echo 0)
+
+    if [[ "$count" -ge 2 ]]; then
+        return 0  # Already present in both service blocks
+    fi
+
+    log_warn "    Volume mount ${container_path} missing — adding..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "    [DRY RUN] Would add ${host_path}:${container_path}"
+        return 0
+    fi
+
+    python3 - "$compose_file" "$host_path" "$container_path" << 'PYEOF2'
+import sys
+
+compose_file, host_path, container_path = sys.argv[1], sys.argv[2], sys.argv[3]
+mount_line = f'      - {host_path}:{container_path}\n'
+
+with open(compose_file, 'r') as f:
+    lines = f.readlines()
+
+# Insert mount_line at the end of each volumes: block (before next non-volume line)
+new_lines = []
+in_volumes = False
+added = 0
+
+for i, line in enumerate(lines):
+    stripped = line.strip()
+    if stripped == 'volumes:' and line.startswith('    '):
+        in_volumes = True
+        new_lines.append(line)
+        continue
+    if in_volumes:
+        if stripped.startswith('- ') and line.startswith('      '):
+            new_lines.append(line)
+            # Check if next line is still a volume entry
+            next_line = lines[i+1] if i+1 < len(lines) else ''
+            if not (next_line.strip().startswith('- ') and next_line.startswith('      ')):
+                if mount_line not in new_lines[-10:]:
+                    new_lines.append(mount_line)
+                    added += 1
+                in_volumes = False
+            continue
+        else:
+            in_volumes = False
+    new_lines.append(line)
+
+with open(compose_file, 'w') as f:
+    f.writelines(new_lines)
+
+print(f"Added {added} volume mount(s)")
+PYEOF2
+}
+
 # Fix PermissionManagerActivePreset when set to "custom" on Free edition wikis.
 # Free edition only allows: public, protected, private.
 fix_permission_manager_preset() {
@@ -397,6 +461,13 @@ upgrade_wiki() {
     ensure_compose_env_var "$compose_file" "WIKI_POST_INIT_SETTINGS_FILE" "/data/bluespice/post-init-settings.php"
     ensure_compose_env_var "$compose_file" "CACHE_HOST"                   "bluespice-cache"
     ensure_compose_env_var "$compose_file" "CACHE_PORT"                   "11211"
+    ensure_compose_env_var "$compose_file" "DB_TYPE"                      "mysql"
+
+    # --- Step 1c: Ensure extension volume mounts exist ---
+    log_info "  Verifying extension volume mounts..."
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/PluggableAuth" "/app/bluespice/w/extensions/PluggableAuth"
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/OpenIDConnect" "/app/bluespice/w/extensions/OpenIDConnect"
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/GTag"          "/app/bluespice/w/extensions/GTag"
 
     # --- Step 1b: Ensure INTERNAL_WIKI_* secrets exist (required by 5.2.x) ---
     log_info "  Verifying INTERNAL_WIKI_* secrets..."
@@ -422,6 +493,10 @@ upgrade_wiki() {
     cp "$env_file" "${BACKUP_DIR}/${wiki_name}.env.bak"
     sed -i "s/^VERSION=.*/VERSION=${target_version}/" "$env_file"
     sed -i "s|^BLUESPICE_WIKI_IMAGE=.*|BLUESPICE_WIKI_IMAGE=bluespice/wiki:${target_version}|" "$env_file"
+    # Ensure DB_TYPE, CACHE_HOST, CACHE_PORT are present in .env
+    grep -q "^DB_TYPE=" "$env_file"    || echo "DB_TYPE=mysql"              >> "$env_file"
+    grep -q "^CACHE_HOST=" "$env_file" || echo "CACHE_HOST=bluespice-cache" >> "$env_file"
+    grep -q "^CACHE_PORT=" "$env_file" || echo "CACHE_PORT=11211"           >> "$env_file"
     log_info "  Updated .env to version $target_version"
 
     # --- Step 4: Pre-create run-updates log directories ---
