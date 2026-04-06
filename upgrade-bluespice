@@ -527,6 +527,11 @@ upgrade_wiki() {
         chown 1002:bluespice \
         /data/bluespice/logs/preupdate \
         /data/bluespice/logs/postupdate 2>/dev/null || true
+    # Ensure settings files are group-writable (664) so the host upgrade
+    # script (running as a bluespice group member) can modify them.
+    docker exec "$container_name" chmod 664 \
+        /data/bluespice/pre-init-settings.php \
+        /data/bluespice/post-init-settings.php 2>/dev/null || true
 
     # --- Step 7: Run MediaWiki database update ---
     log_info "  Running MediaWiki database update..."
