@@ -124,6 +124,7 @@ show_configuration_summary() {
     echo "  SMTP Port: $SMTP_PORT"
     echo "  SMTP User: $SMTP_USER"
     echo "  SMTP Password: [CONFIGURED]"
+    echo "  GTag Analytics ID: ${GTAG_ANALYTICS_ID:-[NOT SET]}"
     
     if [[ "${SETUP_MODE:-}" == "restore" ]]; then
         echo "  Backup File: ${BACKUP_FILE:-[NOT SET]}"
@@ -184,6 +185,11 @@ DB_PORT=3306
 DB_NAME=${WIKI_NAME}_wiki
 DB_USER=${WIKI_NAME}_user
 DB_PASS=$db_password
+DB_TYPE=mysql
+
+# Cache Configuration
+CACHE_HOST=bluespice-cache
+CACHE_PORT=11211
 
 # Version and Edition
 VERSION=$wiki_version
@@ -240,6 +246,9 @@ BLUESPICE_WIKI_IMAGE=bluespice/wiki:$wiki_version
 
 # SSL Configuration
 SSL_ENABLED=$SSL_ENABLED
+
+# Google Analytics / Tag Manager
+GTAG_ANALYTICS_ID=$GTAG_ANALYTICS_ID
 
 # Internal secrets for BlueSpice 5.2.x (loaded by start-*-wrapper.sh via init-envs)
 INTERNAL_WIKI_SECRETKEY=$internal_secretkey

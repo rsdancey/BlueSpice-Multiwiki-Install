@@ -27,6 +27,9 @@ services:
       - /opt/bluespice/scripts:/scripts:ro
       - ${DATA_DIR}/${WIKI_NAME}:/data/bluespice
       - ${DATA_DIR}/${WIKI_NAME}/simplesamlphp:/data/simplesamlphp
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/PluggableAuth:/app/bluespice/w/extensions/PluggableAuth
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/OpenIDConnect:/app/bluespice/w/extensions/OpenIDConnect
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/GTag:/app/bluespice/w/extensions/GTag
     environment:
       - WIKI_NAME=${WIKI_NAME}
       - DB_TYPE=mysql
@@ -36,6 +39,8 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - DB_TYPE=${DB_TYPE}
+      - CACHE_HOST=${CACHE_HOST}
+      - CACHE_PORT=${CACHE_PORT}
       - EDITION=${EDITION}
       - VIRTUAL_HOST=${VIRTUAL_HOST}
       - VIRTUAL_PORT=${VIRTUAL_PORT}
@@ -71,6 +76,8 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - DB_TYPE=${DB_TYPE}
+      - CACHE_HOST=${CACHE_HOST}
+      - CACHE_PORT=${CACHE_PORT}
       - EDITION=${EDITION}
       - WIKI_HOST=${WIKI_HOST}
       - WIKI_PROTOCOL=https
@@ -90,6 +97,9 @@ services:
       - /opt/bluespice/scripts:/scripts:ro
       - ${DATA_DIR}/${WIKI_NAME}:/data/bluespice
       - ${DATA_DIR}/${WIKI_NAME}/simplesamlphp:/data/simplesamlphp
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/PluggableAuth:/app/bluespice/w/extensions/PluggableAuth
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/OpenIDConnect:/app/bluespice/w/extensions/OpenIDConnect
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/GTag:/app/bluespice/w/extensions/GTag
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-task"

@@ -16,7 +16,7 @@ SHARED_DIR="${SCRIPT_DIR}/shared"
 BACKUP_DIR="/tmp/bluespice-upgrade-$(date +%Y%m%d-%H%M%S)"
 
 # Source libraries, then immediately reset any strict mode they may have set
-for lib in logging.sh docker-utils.sh oauth-config.sh; do
+for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh; do
     lib_path="${SCRIPT_DIR}/lib/${lib}"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -354,12 +354,21 @@ upgrade_wiki() {
     # Check OAuth extensions on HOST VOLUME before container recreation.
     # We cannot rely on the container's /app path because it is ephemeral.
     local had_oauth=false
+    local had_gtag=false
     local oauth_host_path="${data_dir}/${wiki_name}/extensions/PluggableAuth/extension.json"
     if [[ -f "$oauth_host_path" ]]; then
         had_oauth=true
         log_info "  OAuth extensions present on host — will reinstall after upgrade"
     else
         log_info "  OAuth extensions not found on host — will skip reinstall"
+
+    local gtag_host_path="${data_dir}/${wiki_name}/extensions/GTag/extension.json"
+    if [[ -f "$gtag_host_path" ]]; then
+        had_gtag=true
+        log_info "  GTag extension present on host — will reinstall after upgrade"
+    else
+        log_info "  GTag extension not found on host — will offer to install"
+    fi
     fi
 
     if [[ "$DRY_RUN" == "true" ]]; then
@@ -463,10 +472,26 @@ upgrade_wiki() {
         fi
     fi
 
-    # --- Step 9: Bump wgCacheEpoch ---
+    # --- Step 8b: Install or reinstall GTag extension ---
     local post_init_file="${data_dir}/${wiki_name}/post-init-settings.php"
-    update_cache_epoch "$post_init_file"
+    if [[ "$had_gtag" == "true" ]]; then
+        log_info "  Reinstalling GTag extension..."
+        if install_gtag_extension "$wiki_name"; then
+            log_info "  GTag extension reinstalled successfully"
+        else
+            log_warn "  GTag extension reinstall failed — Google Analytics tracking may not work"
+        fi
+    else
+        log_info "  GTag extension not previously installed — installing now..."
+        if setup_gtag_extension "$wiki_name" "$post_init_file"; then
+            log_info "  GTag extension installed and configured successfully"
+        else
+            log_warn "  GTag extension setup failed — you can install it manually later"
+        fi
+    fi
 
+    # --- Step 9: Bump wgCacheEpoch ---
+    update_cache_epoch "$post_init_file"
     # --- Step 10: Disable wire WebSocket URL ---
     fix_wire_websocket_url "$post_init_file"
 

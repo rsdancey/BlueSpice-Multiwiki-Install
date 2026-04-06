@@ -85,6 +85,11 @@ create_post_init_settings() {
         sed -i "s/{{SMTP_USER}}/$smtp_user/g" "$post_init_file"
         sed -i "s/{{SMTP_PASS}}/$smtp_pass/g" "$post_init_file"
         sed -i "s/{{WIKI_HOST}}/$wiki_host/g" "$post_init_file"
+
+        gtag_analytics_id=$(grep "^GTAG_ANALYTICS_ID=" "$env_file" | cut -d= -f2 || echo "")
+        sed -i "s/{{GTAG_ANALYTICS_ID}}/$gtag_analytics_id/g" "$post_init_file"
+        
+        log_info "GTag Analytics ID substituted from .env file"
         
         log_info "SMTP settings substituted from .env file"
     else

@@ -38,7 +38,7 @@ SMTP_USER=""
 SMTP_PASS=""
 
 # Source modular libraries with error checking
-for lib in validation config docker-utils oauth-config init-settings-config logrotate-config search-index; do
+for lib in validation config docker-utils oauth-config gtag-config init-settings-config logrotate-config search-index; do
     lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -268,6 +268,16 @@ deploy_wiki_instance() {
     fi
     
     log_info "OAuth extension setup completed successfully"
+
+    # Install and configure GTag extension
+    log_info "Setting up GTag extension..."
+    if ! install_gtag_extension "$WIKI_NAME"; then
+        log_error "CRITICAL: GTag extension setup failed"
+        log_warn "Wiki is functional but Google Analytics tracking will not work"
+        log_warn "Manual intervention may be required"
+    else
+        log_info "GTag extension setup completed successfully"
+    fi
 }
 
 # SSL setup
@@ -518,6 +528,13 @@ main() {
             read -r SMTP_PASS
             validate_smtp_pass "$SMTP_PASS" || SMTP_PASS=""
         done
+
+        # Google Analytics GTag
+        echo ""
+        echo "📊 Google Analytics Configuration:"
+        echo "Configure Google Analytics tracking for your wiki"
+        echo ""
+        prompt_gtag_analytics_id
         
     else
         log_info "Loading existing configuration..."

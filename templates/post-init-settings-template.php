@@ -96,6 +96,16 @@ $wgSMTP = [
 ];
 
 # ============================================
+# GTag Extension (Google Analytics)
+# ============================================
+$gtagPath = '/app/bluespice/w/extensions/GTag';
+if ( file_exists( $gtagPath . '/extension.json' ) ) {
+    wfLoadExtension( 'GTag' );
+    $wgGTagAnalyticsId = '{{GTAG_ANALYTICS_ID}}';
+}
+
+
+# ============================================
 # OAuth Extensions Loading
 # ============================================
 # file_exists() checks safely handle missing extensions without false-positives
