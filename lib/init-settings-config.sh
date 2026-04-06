@@ -187,7 +187,7 @@ setup_interactive_oauth_config() {
     echo "  2. Create or select a project, then enable Google Auth Platform"
     echo "  3. Create OAuth 2.0 credentials (Web Application type)"
     echo "  4. Add this Authorized Redirect URI:"
-    echo "     https://${wiki_domain}/index.php/Special:PluggableAuthLogin"
+    echo "     https://${wiki_domain}/wiki/Special:PluggableAuthLogin"
     echo ""
     echo "Step 2 — Enter credentials in BlueSpice ConfigManager:"
     echo "  1. Log in to the wiki as an admin"
