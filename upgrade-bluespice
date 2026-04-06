@@ -192,7 +192,7 @@ ensure_compose_volume_mount() {
 
     local search_str="${host_path}:${container_path}"
     local count
-    count=$(grep -cF "$search_str" "$compose_file" 2>/dev/null || echo 0)
+    count=$(grep -cF "$search_str" "$compose_file" 2>/dev/null | head -1 | tr -d "[:space:]"); count="${count:-0}"
 
     if [[ "$count" -ge 2 ]]; then
         return 0  # Already present in both service blocks

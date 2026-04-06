@@ -143,6 +143,7 @@ copy_config_files_to_container() {
             echo "❌ Failed to set ownership for pre-init-settings.php in container"
             return 1
         fi
+        docker exec "bluespice-${wiki_name}-wiki-web" chmod 664 /data/bluespice/pre-init-settings.php 2>/dev/null || true
     fi
 
     # Create post-init-settings.php in container with correct ownership
@@ -156,6 +157,7 @@ copy_config_files_to_container() {
             echo "❌ Failed to set ownership for post-init-settings.php in container"
             return 1
         fi
+        docker exec "bluespice-${wiki_name}-wiki-web" chmod 664 /data/bluespice/post-init-settings.php 2>/dev/null || true
     fi
     
     return 0
