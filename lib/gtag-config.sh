@@ -149,14 +149,10 @@ install_gtag_extension() {
     docker_exec_safe "$wiki_name" chown -R bluespice:bluespice /data/bluespice/extensions/GTag >/dev/null 2>&1 || true
     docker_exec_safe "$wiki_name" chmod -R g+rwX /data/bluespice/extensions/GTag >/dev/null 2>&1 || true
 
-    # Activate in the running container
+    # GTag is available at /app via docker-compose volume mount:
+    #   /data/bluespice/extensions/GTag -> /app/bluespice/w/extensions/GTag
+    # No copy needed - just verify the mount is live.
     log_info "  📋 Activating GTag extension in container..."
-    if ! docker_exec_safe "$wiki_name" "rm -rf /app/bluespice/w/extensions/GTag && cp -r /data/bluespice/extensions/GTag /app/bluespice/w/extensions/GTag"; then
-        log_error "  ❌ Failed to activate GTag extension" >&2
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/GTag"
 
     # Verify activation
     if ! docker_exec_safe "$wiki_name" "test -f /app/bluespice/w/extensions/GTag/extension.json"; then

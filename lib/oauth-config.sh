@@ -167,19 +167,11 @@ install_auth_extensions() {
     # Fix ownership on persistent extensions now that vendor/ has been written
     docker_exec_safe "$wiki_name" chown -R bluespice:bluespice /data/bluespice/extensions >/dev/null 2>&1 || true
 
-    # Copy the complete extensions (including vendor/) to the active /app path for
-    # immediate use. On future container restarts the startup script handles this.
+    # Extensions are available at /app via docker-compose volume mounts:
+    #   /data/bluespice/extensions/PluggableAuth  -> /app/bluespice/w/extensions/PluggableAuth
+    #   /data/bluespice/extensions/OpenIDConnect  -> /app/bluespice/w/extensions/OpenIDConnect
+    # No copy needed - just verify the mounts are live.
     log_info "  📋 Activating extensions in container..."
-    if ! docker_exec_safe "$wiki_name" "rm -rf /app/bluespice/w/extensions/PluggableAuth && cp -r /data/bluespice/extensions/PluggableAuth /app/bluespice/w/extensions/PluggableAuth"; then
-        log_error "❌ Failed to activate PluggableAuth" >&2
-        return 1
-    fi
-    if ! docker_exec_safe "$wiki_name" "rm -rf /app/bluespice/w/extensions/OpenIDConnect && cp -r /data/bluespice/extensions/OpenIDConnect /app/bluespice/w/extensions/OpenIDConnect"; then
-        log_error "❌ Failed to activate OpenIDConnect" >&2
-        return 1
-    fi
-    docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/PluggableAuth"
-    docker_set_ownership "$wiki_name" "/app/bluespice/w/extensions/OpenIDConnect"
 
     # Verify all required files are present
     if ! docker_exec_safe "$wiki_name" "test -f /app/bluespice/w/extensions/PluggableAuth/extension.json"; then
