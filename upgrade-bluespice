@@ -247,6 +247,32 @@ print(f"Added {added} volume mount(s)")
 PYEOF2
 }
 
+# Ensure a tmpfs entry appears in the wiki-web service block of a docker-compose file.
+ensure_compose_tmpfs() {
+    local compose_file="$1"
+    local tmpfs_entry="$2"
+
+    local count
+    count=$(grep -cF "- ${tmpfs_entry}" "$compose_file" 2>/dev/null | head -1 | tr -d "[:space:]"); count="${count:-0}"
+
+    if [[ "$count" -ge 1 ]]; then
+        return 0
+    fi
+
+    log_warn "    tmpfs ${tmpfs_entry} missing from $(basename "$compose_file") — adding to wiki-web..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "    [DRY RUN] Would add tmpfs: - ${tmpfs_entry} to wiki-web"
+        return 0
+    fi
+
+    python3 "${SCRIPT_DIR}/lib/add_tmpfs.py" "$compose_file" "$tmpfs_entry"
+    if [[ $? -ne 0 ]]; then
+        log_warn "    Could not auto-add tmpfs ${tmpfs_entry} -- please add it manually to ${compose_file}"
+    fi
+}
+
+
 # Fix PermissionManagerActivePreset when set to "custom" on Free edition wikis.
 # Free edition only allows: public, protected, private.
 fix_permission_manager_preset() {
@@ -439,6 +465,7 @@ upgrade_wiki() {
         log_info "  [DRY RUN] Steps that would execute:"
         log_info "    1.  Verify/add required env vars in compose file"
         log_info "    1b. Verify/generate INTERNAL_WIKI_* secrets"
+        log_info "    1c. Verify/add tmpfs mounts in compose file"
         log_info "    2.  docker pull bluespice/wiki:${target_version}"
         log_info "    3.  Update .env (VERSION, BLUESPICE_WIKI_IMAGE)"
         log_info "    4.  Create preupdate/postupdate log directories"
@@ -468,6 +495,10 @@ upgrade_wiki() {
     ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/PluggableAuth" "/app/bluespice/w/extensions/PluggableAuth"
     ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/OpenIDConnect" "/app/bluespice/w/extensions/OpenIDConnect"
     ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/GTag"          "/app/bluespice/w/extensions/GTag"
+
+    # --- Step 1d: Ensure tmpfs mounts are configured ---
+    log_info "  Verifying tmpfs mounts..."
+    ensure_compose_tmpfs "$compose_file" "/tmp/wiki:uid=1002,gid=1002"
 
     # --- Step 1b: Ensure INTERNAL_WIKI_* secrets exist (required by 5.2.x) ---
     log_info "  Verifying INTERNAL_WIKI_* secrets..."
