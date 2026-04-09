@@ -38,7 +38,7 @@ SMTP_USER=""
 SMTP_PASS=""
 
 # Source modular libraries with error checking
-for lib in validation config docker-utils oauth-config gtag-config init-settings-config logrotate-config search-index; do
+for lib in validation config docker-utils oauth-config gtag-config init-settings-config logrotate-config search-index upstream-check; do
     lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -441,6 +441,16 @@ show_completion_info() {
 main() {
     # Parse command line arguments
     parse_arguments "$@"
+
+    # Check upstream bluespice-deploy for new services before proceeding
+    local target_version
+    target_version=$("${SCRIPT_DIR}/lib/get-latest-bluespice-version.sh" 2>/dev/null) || target_version=""
+    if [[ -n "$target_version" ]]; then
+        if ! check_upstream_services "$target_version"; then
+            log_error "Please update core_install to support the new services before creating a wiki."
+            exit 1
+        fi
+    fi
 
     echo "🚀 BlueSpice Wiki Initialization Wizard"
     echo "========================================"

@@ -1,0 +1,19 @@
+# Known services from hallowelt/bluespice-deploy 5.2.2
+# One service name per line. Update this file when new upstream services
+# are integrated into the core_install system.
+wiki-installer
+wiki-web
+wiki-task
+cache
+pdf
+formula
+diagram
+wire
+search
+database
+prepare
+upgrade
+proxy
+collabpads
+collabpads-database
+proxy-permissions

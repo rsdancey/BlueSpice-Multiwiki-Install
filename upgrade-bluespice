@@ -16,7 +16,7 @@ SHARED_DIR="${SCRIPT_DIR}/shared"
 BACKUP_DIR="/tmp/bluespice-upgrade-$(date +%Y%m%d-%H%M%S)"
 
 # Source libraries, then immediately reset any strict mode they may have set
-for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh; do
+for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh upstream-check.sh; do
     lib_path="${SCRIPT_DIR}/lib/${lib}"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -333,12 +333,11 @@ update_cache_epoch() {
     log_info "  Set wgCacheEpoch=$epoch in $(basename "$post_init_file")"
 }
 
-# Ensure mwsgWireServiceWebsocketUrl is disabled in post-init-settings.php.
-# The bluespice/wiki container always sets this to $wgServer/_wire even when
-# the optional bluespice/wire service is not deployed, causing every open
-# browser tab to loop with token+HTTP requests every ~3s, consuming PHP-FPM
-# workers and CPU. This fix is idempotent and safe to run on every upgrade.
-fix_wire_websocket_url() {
+# Enable wire WebSocket URL for existing wikis that had it disabled.
+# Previously we disabled this because the wire container wasn't deployed.
+# Now that we deploy the wire container, we need to remove the override
+# so the built-in $wgServer/_wire URL takes effect.
+enable_wire_websocket_url() {
     local post_init_file="$1"
 
     if [[ ! -f "$post_init_file" ]]; then
@@ -346,24 +345,28 @@ fix_wire_websocket_url() {
     fi
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "  [DRY RUN] Would disable mwsgWireServiceWebsocketUrl in $(basename "$post_init_file")"
+        log_info "  [DRY RUN] Would re-enable mwsgWireServiceWebsocketUrl in $(basename "$post_init_file")"
         return 0
     fi
 
-    if grep -q "mwsgWireServiceWebsocketUrl" "$post_init_file"; then
-        log_info "  mwsgWireServiceWebsocketUrl already set in $(basename "$post_init_file") — skipping"
-        return 0
+    if grep -q "mwsgWireServiceWebsocketUrl.*=.*''\|mwsgWireServiceWebsocketUrl.*=.*\"\"" "$post_init_file"; then
+        log_info "  Removing mwsgWireServiceWebsocketUrl='' override (wire container now deployed)..."
+        sed -i '/mwsgWireServiceWebsocketUrl/d' "$post_init_file"
+        # Also remove associated comment blocks
+        sed -i '/# Disable the wire WebSocket URL/d' "$post_init_file"
+        sed -i '/# sets this to .wgServer\/_wire even when the bluespice\/wire service/d' "$post_init_file"
+        sed -i '/# deployed. Without this override every open browser tab/d' "$post_init_file"
+        sed -i '/# loop that wastes PHP-FPM workers and CPU/d' "$post_init_file"
+        sed -i '/# Wire WebSocket Service/d' "$post_init_file"
+        sed -i '/# The bluespice\/wiki container always sets/d' "$post_init_file"
+        sed -i '/# deployed. This causes every open browser tab/d' "$post_init_file"
+        sed -i '/# loop .token generate .* HTTP request/d' "$post_init_file"
+        sed -i '/# and CPU on all wikis. Override it to empty/d' "$post_init_file"
+        sed -i '/# wire service/d' "$post_init_file"
+        log_info "  Re-enabled wire WebSocket URL in $(basename "$post_init_file")"
+    else
+        log_info "  Wire WebSocket URL not overridden in $(basename "$post_init_file") — OK"
     fi
-
-    cat >> "$post_init_file" <<'PHP'
-
-# Disable the wire WebSocket URL: the bluespice/wiki container unconditionally
-# sets this to $wgServer/_wire even when the bluespice/wire service is not
-# deployed. Without this override every open browser tab enters a reconnect
-# loop that wastes PHP-FPM workers and CPU.
-$GLOBALS['mwsgWireServiceWebsocketUrl'] = '';
-PHP
-    log_info "  Disabled mwsgWireServiceWebsocketUrl in $(basename "$post_init_file")"
 }
 
 # Ensure wgParserCacheType uses memcached in post-init-settings.php.
@@ -491,6 +494,7 @@ upgrade_wiki() {
     ensure_compose_env_var "$compose_file" "CACHE_HOST"                   "bluespice-cache"
     ensure_compose_env_var "$compose_file" "CACHE_PORT"                   "11211"
     ensure_compose_env_var "$compose_file" "DB_TYPE"                      "mysql"
+    ensure_compose_env_var "$compose_file" "INTERNAL_WIRE_API_KEY"         "\${INTERNAL_WIRE_API_KEY}"
 
     # --- Step 1c: Ensure extension volume mounts exist ---
     log_info "  Verifying extension volume mounts..."
@@ -505,7 +509,7 @@ upgrade_wiki() {
 
     # --- Step 1b: Ensure INTERNAL_WIKI_* secrets exist (required by 5.2.x) ---
     log_info "  Verifying INTERNAL_WIKI_* secrets..."
-    for secret_var in INTERNAL_WIKI_SECRETKEY INTERNAL_WIKI_UPGRADEKEY INTERNAL_WIKI_TOKEN_AUTH_SALT; do
+    for secret_var in INTERNAL_WIKI_SECRETKEY INTERNAL_WIKI_UPGRADEKEY INTERNAL_WIKI_TOKEN_AUTH_SALT INTERNAL_WIRE_API_KEY; do
         existing=$(read_env_var "$env_file" "$secret_var")
         if [[ -z "$existing" ]]; then
             new_secret=$(openssl rand -hex 32)
@@ -606,8 +610,8 @@ upgrade_wiki() {
 
     # --- Step 9: Bump wgCacheEpoch ---
     update_cache_epoch "$post_init_file"
-    # --- Step 10: Disable wire WebSocket URL ---
-    fix_wire_websocket_url "$post_init_file"
+    # --- Step 10: Enable wire WebSocket URL (wire container now deployed) ---
+    enable_wire_websocket_url "$post_init_file"
 
     # --- Step 11: Enable parser cache ---
     fix_parser_cache "$post_init_file"

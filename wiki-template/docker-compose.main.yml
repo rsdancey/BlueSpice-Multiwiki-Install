@@ -55,6 +55,7 @@ services:
       - INTERNAL_WIKI_SECRETKEY=${INTERNAL_WIKI_SECRETKEY}
       - INTERNAL_WIKI_UPGRADEKEY=${INTERNAL_WIKI_UPGRADEKEY}
       - INTERNAL_WIKI_TOKEN_AUTH_SALT=${INTERNAL_WIKI_TOKEN_AUTH_SALT}
+      - INTERNAL_WIRE_API_KEY=${INTERNAL_WIRE_API_KEY}
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-web"
@@ -89,6 +90,7 @@ services:
       - INTERNAL_WIKI_SECRETKEY=${INTERNAL_WIKI_SECRETKEY}
       - INTERNAL_WIKI_UPGRADEKEY=${INTERNAL_WIKI_UPGRADEKEY}
       - INTERNAL_WIKI_TOKEN_AUTH_SALT=${INTERNAL_WIKI_TOKEN_AUTH_SALT}
+      - INTERNAL_WIRE_API_KEY=${INTERNAL_WIRE_API_KEY}
     networks:
       - bluespice-network
     tmpfs:
@@ -104,6 +106,28 @@ services:
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-task"
+      com.bluespice.type: "application"
+      com.bluespice.wiki: ${WIKI_NAME}
+
+  wire:
+    image: ${BLUESPICE_SERVICE_REPOSITORY}/wire:${VERSION}
+    container_name: ${CONTAINER_PREFIX}-wire
+    restart: unless-stopped
+    networks:
+      - bluespice-network
+    environment:
+      - WIRE_LOG_LEVEL=info
+      - WIRE_WIKI_BASE_PATH=http://${CONTAINER_PREFIX}-wiki-web:9090
+      - WIRE_API_KEY=${INTERNAL_WIRE_API_KEY}
+      - WIRE_TOKEN_SALT=${INTERNAL_WIKI_TOKEN_AUTH_SALT}
+      - VIRTUAL_HOST=${VIRTUAL_HOST}
+      - VIRTUAL_PATH=/_wire
+      - VIRTUAL_PORT=3333
+      - VIRTUAL_DEST=/
+      - LETSENCRYPT_HOST=${LETSENCRYPT_HOST}
+    <<: *common-config
+    labels:
+      com.bluespice.service: "wire"
       com.bluespice.type: "application"
       com.bluespice.wiki: ${WIKI_NAME}
 
