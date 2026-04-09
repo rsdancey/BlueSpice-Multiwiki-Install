@@ -375,15 +375,13 @@ deploy_wiki() {
         # bind mount at /data/bluespice is populated on first boot
         create_host_data_directories
 
-        # Start services
-        log_info "Starting BlueSpice wiki services..."
+        # Start only the wiki-web service for installation.
+        # Do NOT start wiki-task yet — its entrypoint runs run-updates which
+        # would race against the database install and corrupt content_models.
+        log_info "Starting wiki-web container for installation..."
         cd "/core/wikis/${WIKI_NAME}"
-        eval "docker compose $compose_files up -d"
-        
-        # Stop task container temporarily to prevent database connection issues
-        log_info "Stopping task container temporarily..."
-        docker stop "${CONTAINER_PREFIX}-wiki-task"
-        sleep 10
+        eval "docker compose $compose_files up -d wiki-web wire"
+        sleep 5
         
         if wait_for_healthy "${CONTAINER_PREFIX}-wiki-web"; then
             # Create data directories and fix permissions after containers are running
@@ -396,9 +394,9 @@ deploy_wiki() {
             create_bluespice_files
             run_bluespice_install
                         
-            # Now restart the task container
+            # Now create and start the task container (it wasn't started during install)
             log_info "Starting task container..."
-            docker start "${CONTAINER_PREFIX}-wiki-task"
+            eval "docker compose $compose_files up -d wiki-task"
 
             # Ensure temp directory exists in task container as well
             docker exec --user root "${CONTAINER_PREFIX}-wiki-task" sh -c "mkdir -p /tmp/wiki && chown bluespice:bluespice /tmp/wiki && chmod 1777 /tmp/wiki"
