@@ -330,7 +330,8 @@ edit_post_init() {
             ;;
         append)
             # $1 = text to append
-            if ! printf '%s\n' "$1" >> "$host_path" 2>/dev/null; then
+            # Use subshell so bash's redirect-failure error is also suppressed
+            if ! (printf '%s\n' "$1" >> "$host_path") 2>/dev/null; then
                 local container_name
                 container_name=$(get_container_name "$wiki_name") 2>/dev/null || return 1
                 docker exec --user root "$container_name" sh -c "printf '%s\n' '$1' >> $container_path" 2>/dev/null || return 1
