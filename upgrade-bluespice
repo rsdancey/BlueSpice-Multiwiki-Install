@@ -600,11 +600,19 @@ upgrade_wiki() {
             log_warn "  GTag extension reinstall failed — Google Analytics tracking may not work"
         fi
     else
-        log_info "  GTag extension not previously installed — installing now..."
-        if setup_gtag_extension "$wiki_name" "$post_init_file"; then
-            log_info "  GTag extension installed and configured successfully"
+        echo ""
+        echo "  Wiki: ${wiki_name}"
+        printf "  Install Google Analytics (GTag) extension for this wiki? [y/N]: "
+        read -r install_gtag_answer
+        if [[ "$install_gtag_answer" =~ ^[Yy]$ ]]; then
+            log_info "  Installing GTag extension for ${wiki_name}..."
+            if setup_gtag_extension "$wiki_name" "$post_init_file"; then
+                log_info "  GTag extension installed and configured successfully"
+            else
+                log_warn "  GTag extension setup failed — you can install it manually later"
+            fi
         else
-            log_warn "  GTag extension setup failed — you can install it manually later"
+            log_info "  Skipping GTag extension for ${wiki_name}"
         fi
     fi
 
