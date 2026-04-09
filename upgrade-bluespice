@@ -309,9 +309,40 @@ fix_permission_manager_preset() {
     fi
 }
 
+# Edit a post-init-settings file, falling back to docker exec if host permissions deny access.
+# Usage: edit_post_init <wiki_name> <host_path> <command> [args...]
+# <command> can be "sed", "append", or "grep-delete"
+edit_post_init() {
+    local wiki_name="$1"
+    local host_path="$2"
+    local cmd="$3"
+    shift 3
+    local container_path="/data/bluespice/post-init-settings.php"
+
+    case "$cmd" in
+        sed)
+            # $1 = sed expression
+            if ! sed -i "$1" "$host_path" 2>/dev/null; then
+                local container_name
+                container_name=$(get_container_name "$wiki_name") 2>/dev/null || return 1
+                docker exec --user root "$container_name" sed -i "$1" "$container_path" 2>/dev/null || return 1
+            fi
+            ;;
+        append)
+            # $1 = text to append
+            if ! printf '%s\n' "$1" >> "$host_path" 2>/dev/null; then
+                local container_name
+                container_name=$(get_container_name "$wiki_name") 2>/dev/null || return 1
+                docker exec --user root "$container_name" sh -c "printf '%s\n' '$1' >> $container_path" 2>/dev/null || return 1
+            fi
+            ;;
+    esac
+}
+
 # Bump wgCacheEpoch in post-init-settings.php to bust stale browser/server caches.
 update_cache_epoch() {
-    local post_init_file="$1"
+    local wiki_name="$1"
+    local post_init_file="$2"
 
     if [[ ! -f "$post_init_file" ]]; then
         return 0
@@ -326,9 +357,11 @@ update_cache_epoch() {
     fi
 
     if grep -q 'wgCacheEpoch' "$post_init_file"; then
-        sed -i "s/\\\$wgCacheEpoch = .*;/\$wgCacheEpoch = \"${epoch}\";/" "$post_init_file"
+        edit_post_init "$wiki_name" "$post_init_file" sed "s/\\\$wgCacheEpoch = .*;/\$wgCacheEpoch = \"${epoch}\";/" \
+            || log_warn "  Could not update wgCacheEpoch"
     else
-        echo "\$wgCacheEpoch = \"${epoch}\";" >> "$post_init_file"
+        edit_post_init "$wiki_name" "$post_init_file" append "\$wgCacheEpoch = \"${epoch}\";" \
+            || log_warn "  Could not append wgCacheEpoch"
     fi
     log_info "  Set wgCacheEpoch=$epoch in $(basename "$post_init_file")"
 }
@@ -338,7 +371,8 @@ update_cache_epoch() {
 # Now that we deploy the wire container, we need to remove the override
 # so the built-in $wgServer/_wire URL takes effect.
 enable_wire_websocket_url() {
-    local post_init_file="$1"
+    local wiki_name="$1"
+    local post_init_file="$2"
 
     if [[ ! -f "$post_init_file" ]]; then
         return 0
@@ -351,18 +385,22 @@ enable_wire_websocket_url() {
 
     if grep -q "mwsgWireServiceWebsocketUrl.*=.*''\|mwsgWireServiceWebsocketUrl.*=.*\"\"" "$post_init_file"; then
         log_info "  Removing mwsgWireServiceWebsocketUrl='' override (wire container now deployed)..."
-        sed -i '/mwsgWireServiceWebsocketUrl/d' "$post_init_file"
-        # Also remove associated comment blocks
-        sed -i '/# Disable the wire WebSocket URL/d' "$post_init_file"
-        sed -i '/# sets this to .wgServer\/_wire even when the bluespice\/wire service/d' "$post_init_file"
-        sed -i '/# deployed. Without this override every open browser tab/d' "$post_init_file"
-        sed -i '/# loop that wastes PHP-FPM workers and CPU/d' "$post_init_file"
-        sed -i '/# Wire WebSocket Service/d' "$post_init_file"
-        sed -i '/# The bluespice\/wiki container always sets/d' "$post_init_file"
-        sed -i '/# deployed. This causes every open browser tab/d' "$post_init_file"
-        sed -i '/# loop .token generate .* HTTP request/d' "$post_init_file"
-        sed -i '/# and CPU on all wikis. Override it to empty/d' "$post_init_file"
-        sed -i '/# wire service/d' "$post_init_file"
+        local patterns=(
+            '/mwsgWireServiceWebsocketUrl/d'
+            '/# Disable the wire WebSocket URL/d'
+            '/# sets this to .wgServer\/_wire even when/d'
+            '/# deployed. Without this override every/d'
+            '/# loop that wastes PHP-FPM workers/d'
+            '/# Wire WebSocket Service/d'
+            '/# The bluespice\/wiki container always sets/d'
+            '/# deployed. This causes every open browser/d'
+            '/# loop .token generate.*HTTP request/d'
+            '/# and CPU on all wikis. Override it/d'
+            '/# wire service\./d'
+        )
+        for pat in "${patterns[@]}"; do
+            edit_post_init "$wiki_name" "$post_init_file" sed "$pat" 2>/dev/null || true
+        done
         log_info "  Re-enabled wire WebSocket URL in $(basename "$post_init_file")"
     else
         log_info "  Wire WebSocket URL not overridden in $(basename "$post_init_file") — OK"
@@ -375,7 +413,8 @@ enable_wire_websocket_url() {
 # memcached is always configured in these deployments, enabling the parser
 # cache is safe and significantly reduces page load times. Idempotent.
 fix_parser_cache() {
-    local post_init_file="$1"
+    local wiki_name="$1"
+    local post_init_file="$2"
 
     if [[ ! -f "$post_init_file" ]]; then
         return 0
@@ -391,13 +430,14 @@ fix_parser_cache() {
         return 0
     fi
 
-    cat >> "$post_init_file" <<'PHP'
-
+    local parser_cache_block='
 # Enable parser cache using the already-configured memcached backend.
 # The bluespice/wiki container sets wgParserCacheType = CACHE_NONE by default,
 # forcing a full wikitext re-parse on every page view and post-save page load.
-$GLOBALS['wgParserCacheType'] = CACHE_MEMCACHED;
-PHP
+$GLOBALS['"'"'wgParserCacheType'"'"'] = CACHE_MEMCACHED;'
+
+    edit_post_init "$wiki_name" "$post_init_file" append "$parser_cache_block" \
+        || log_warn "  Could not append parser cache setting"
     log_info "  Enabled parser cache (CACHE_MEMCACHED) in $(basename "$post_init_file")"
 }
 
@@ -617,12 +657,12 @@ upgrade_wiki() {
     fi
 
     # --- Step 9: Bump wgCacheEpoch ---
-    update_cache_epoch "$post_init_file"
+    update_cache_epoch "$wiki_name" "$post_init_file"
     # --- Step 10: Enable wire WebSocket URL (wire container now deployed) ---
-    enable_wire_websocket_url "$post_init_file"
+    enable_wire_websocket_url "$wiki_name" "$post_init_file"
 
     # --- Step 11: Enable parser cache ---
-    fix_parser_cache "$post_init_file"
+    fix_parser_cache "$wiki_name" "$post_init_file"
 
     # --- Step 12: Fix PermissionManagerActivePreset for Free edition ---
     if [[ "$edition" == "free" ]] && [[ -n "$db_name" ]]; then
@@ -673,6 +713,10 @@ upgrade_shared_services() {
     log_info "  Updated shared .env to version $target_version"
 
     cd "$SHARED_DIR" || return 1
+
+    # Ensure VERSION and BLUESPICE_SERVICE_REPOSITORY are available to docker compose
+    export VERSION="$target_version"
+    export BLUESPICE_SERVICE_REPOSITORY="${BLUESPICE_SERVICE_REPOSITORY:-bluespice}"
 
     log_info "  Restarting persistent data services..."
     if docker compose --env-file .shared.env \
