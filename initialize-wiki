@@ -269,14 +269,18 @@ deploy_wiki_instance() {
     
     log_info "OAuth extension setup completed successfully"
 
-    # Install and configure GTag extension
-    log_info "Setting up GTag extension..."
-    if ! install_gtag_extension "$WIKI_NAME"; then
-        log_error "CRITICAL: GTag extension setup failed"
-        log_warn "Wiki is functional but Google Analytics tracking will not work"
-        log_warn "Manual intervention may be required"
+    # Install and configure GTag extension (only if user opted in)
+    if [[ -n "${GTAG_ANALYTICS_ID:-}" ]]; then
+        log_info "Setting up GTag extension..."
+        if ! install_gtag_extension "$WIKI_NAME"; then
+            log_error "CRITICAL: GTag extension setup failed"
+            log_warn "Wiki is functional but Google Analytics tracking will not work"
+            log_warn "Manual intervention may be required"
+        else
+            log_info "GTag extension setup completed successfully"
+        fi
     else
-        log_info "GTag extension setup completed successfully"
+        log_info "Skipping GTag extension (not requested)"
     fi
 }
 
@@ -541,10 +545,18 @@ main() {
 
         # Google Analytics GTag
         echo ""
-        echo "📊 Google Analytics Configuration:"
-        echo "Configure Google Analytics tracking for your wiki"
-        echo ""
-        prompt_gtag_analytics_id
+        printf "Install Google Analytics (GTag) extension? [y/N]: "
+        read -r install_gtag_choice
+        if [[ "$install_gtag_choice" =~ ^[Yy]$ ]]; then
+            echo ""
+            echo "📊 Google Analytics Configuration:"
+            echo "Configure Google Analytics tracking for your wiki"
+            echo ""
+            prompt_gtag_analytics_id
+        else
+            GTAG_ANALYTICS_ID=""
+            log_info "Skipping GTag extension"
+        fi
         
     else
         log_info "Loading existing configuration..."
