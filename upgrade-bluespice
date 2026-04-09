@@ -247,28 +247,30 @@ print(f"Added {added} volume mount(s)")
 PYEOF2
 }
 
-# Ensure a tmpfs entry appears in the wiki-web service block of a docker-compose file.
+# Ensure a tmpfs entry appears in a service block of a docker-compose file.
+# Usage: ensure_compose_tmpfs <compose_file> <tmpfs_entry> [service_name]
+# If service_name is given, only that service is checked/modified.
 ensure_compose_tmpfs() {
     local compose_file="$1"
     local tmpfs_entry="$2"
+    local service_name="${3:-}"
+    local service_label="${service_name:-all services}"
 
-    local count
-    count=$(grep -cF "- ${tmpfs_entry}" "$compose_file" 2>/dev/null | head -1 | tr -d "[:space:]"); count="${count:-0}"
-
-    if [[ "$count" -ge 1 ]]; then
-        return 0
-    fi
-
-    log_warn "    tmpfs ${tmpfs_entry} missing from $(basename "$compose_file") — adding to wiki-web..."
+    # Let add_tmpfs.py handle idempotency — it exits cleanly if already present
+    log_info "    Checking tmpfs ${tmpfs_entry} in ${service_label}..."
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "    [DRY RUN] Would add tmpfs: - ${tmpfs_entry} to wiki-web"
+        log_info "    [DRY RUN] Would ensure tmpfs: - ${tmpfs_entry} in ${service_label}"
         return 0
     fi
 
-    python3 "${SCRIPT_DIR}/lib/add_tmpfs.py" "$compose_file" "$tmpfs_entry"
-    if [[ $? -ne 0 ]]; then
-        log_warn "    Could not auto-add tmpfs ${tmpfs_entry} -- please add it manually to ${compose_file}"
+    local cmd_args=("${SCRIPT_DIR}/lib/add_tmpfs.py" "$compose_file" "$tmpfs_entry")
+    if [[ -n "$service_name" ]]; then
+        cmd_args+=(--service "$service_name")
+    fi
+
+    if ! python3 "${cmd_args[@]}"; then
+        log_warn "    Could not auto-add tmpfs ${tmpfs_entry} to ${service_label} -- please add it manually to ${compose_file}"
     fi
 }
 
@@ -498,7 +500,8 @@ upgrade_wiki() {
 
     # --- Step 1d: Ensure tmpfs mounts are configured ---
     log_info "  Verifying tmpfs mounts..."
-    ensure_compose_tmpfs "$compose_file" "/tmp/wiki:uid=1002,gid=1002"
+    ensure_compose_tmpfs "$compose_file" "/tmp/wiki:uid=1002,gid=1002" "wiki-web"
+    ensure_compose_tmpfs "$compose_file" "/tmp/wiki:uid=1002,gid=1002" "wiki-task"
 
     # --- Step 1b: Ensure INTERNAL_WIKI_* secrets exist (required by 5.2.x) ---
     log_info "  Verifying INTERNAL_WIKI_* secrets..."

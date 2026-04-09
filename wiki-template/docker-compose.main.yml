@@ -93,6 +93,7 @@ services:
       - bluespice-network
     tmpfs:
       - /data:uid=1002,gid=1002
+      - /tmp/wiki:uid=1002,gid=1002
     volumes:
       - /opt/bluespice/scripts:/scripts:ro
       - ${DATA_DIR}/${WIKI_NAME}:/data/bluespice

@@ -34,8 +34,10 @@ create_pre_init_settings() {
 \$wgGroupPermissions['user']['sendemail'] = true;
 \$wgGroupPermissions['autoconfirmed']['sendemail'] = true;
 
-# Set a useable /tmp directory                                                                                              
-\$GLOBALS['mwsgRunJobsTriggerRunnerWorkingDir'] = '/tmp/${wiki_name}';
+# Set temp directory for RunJobsTriggerRunner working dir
+# Note: BlueSpiceFoundation overrides this to BSDATADIR at runtime,
+# but we set it here as a fallback in case that behavior changes.
+\$GLOBALS['mwsgRunJobsTriggerRunnerWorkingDir'] = '/tmp/wiki';
 PREINIT_EOF
     
     # Check if file was created successfully

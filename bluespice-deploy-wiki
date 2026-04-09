@@ -190,8 +190,7 @@ create_data_directories() {
     docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /data/bluespice/logs"
     
     # Ensure temp directory for UUID generator used by GlobalIdGenerator
-    docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/${WIKI_NAME}"
-    docker_exec_safe "$WIKI_NAME" "chown -R bluespice:bluespice /tmp/${WIKI_NAME}"
+    docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/wiki && chown bluespice:bluespice /tmp/wiki && chmod 1777 /tmp/wiki"
 
     # Ensure SimpleSAMLphp cert directory for scripts expecting /data/simplesamlphp/certs
     docker_exec_safe "$WIKI_NAME" "mkdir -p /data/simplesamlphp/certs"
@@ -402,7 +401,7 @@ deploy_wiki() {
             docker start "${CONTAINER_PREFIX}-wiki-task"
 
             # Ensure temp directory exists in task container as well
-            docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}"
+            docker exec --user root "${CONTAINER_PREFIX}-wiki-task" sh -c "mkdir -p /tmp/wiki && chown bluespice:bluespice /tmp/wiki && chmod 1777 /tmp/wiki"
         else
             log_error "Wiki deployment failed - container did not become healthy"
             exit 1
@@ -412,8 +411,9 @@ deploy_wiki() {
         cd "/core/wikis/${WIKI_NAME}"
         docker compose -f docker-compose.main.yml -f docker-compose.helper-service.yml up -d
         
-        # Ensure temp directory exists in web container after start
-        docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/${WIKI_NAME} && chmod 1777 /tmp/${WIKI_NAME}"
+        # Ensure temp directory exists in both containers after start
+        docker_exec_safe "$WIKI_NAME" "mkdir -p /tmp/wiki && chown bluespice:bluespice /tmp/wiki && chmod 1777 /tmp/wiki"
+        docker exec --user root "${CONTAINER_PREFIX}-wiki-task" sh -c "mkdir -p /tmp/wiki && chown bluespice:bluespice /tmp/wiki && chmod 1777 /tmp/wiki"
 
         log_info "Wiki started successfully!"
     fi
