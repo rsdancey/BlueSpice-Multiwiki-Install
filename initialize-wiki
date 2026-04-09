@@ -718,7 +718,14 @@ main() {
         fi
     fi
 
-    docker_exec_safe "$WIKI_NAME" "/app/bin/run-maintenance update.php --quick --doshared"
+    # The initial run-installation includes update.php which runs the ContentProvisioner.
+    # Template:CircledNumber contains <templatestyles> referencing a styles.css subpage
+    # that doesn't exist yet during initial provisioning, leaving broken blob references.
+    # Clean up bad blobs, then re-run update.php so the ContentProvisioner can finish.
+    log_info "Cleaning up any broken blob references from initial install..."
+    docker exec --user root "bluespice-${WIKI_NAME}-wiki-web"         php /app/bluespice/w/maintenance/run.php findBadBlobs --mark 2>/dev/null || true
+
+    docker_exec_safe "$WIKI_NAME" "/app/bin/run-maintenance update.php --quick --doshared" || true
 
     # Rebuild search index
     echo
