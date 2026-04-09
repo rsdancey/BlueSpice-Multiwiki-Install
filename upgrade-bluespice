@@ -497,6 +497,7 @@ upgrade_wiki() {
         log_info "  OAuth extensions present on host — will reinstall after upgrade"
     else
         log_info "  OAuth extensions not found on host — will skip reinstall"
+    fi
 
     local gtag_host_path="${data_dir}/${wiki_name}/extensions/GTag/extension.json"
     if [[ -f "$gtag_host_path" ]]; then
@@ -504,7 +505,6 @@ upgrade_wiki() {
         log_info "  GTag extension present on host — will reinstall after upgrade"
     else
         log_info "  GTag extension not found on host — will offer to install"
-    fi
     fi
 
     if [[ "$DRY_RUN" == "true" ]]; then
@@ -675,8 +675,12 @@ upgrade_wiki() {
     # require a full rebuild to create the updated mapping. Without this, searches
     # throw BadRequest400Exception and show "Query cannot be executed" in the UI.
     log_info "  Rebuilding search index with updated mappings..."
-    if docker exec "$container_name" /app/bin/rebuild-searchindex --main 2>&1 \
-            | grep -E "done:|created:|Error" | head -10; then
+    local rebuild_output rebuild_ok=false
+    if rebuild_output=$(docker exec "$container_name" /app/bin/rebuild-searchindex --main 2>&1); then
+        rebuild_ok=true
+    fi
+    echo "$rebuild_output" | grep -E "done:|created:|Error" | head -10 || true
+    if [[ "$rebuild_ok" == "true" ]]; then
         log_info "  Search index rebuilt"
     else
         log_warn "  Search index rebuild may have had issues — search could be degraded"

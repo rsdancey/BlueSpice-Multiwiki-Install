@@ -143,12 +143,13 @@ initialize_database() {
     echo "Setting up root user passwords for all hosts..."
     if docker exec bluespice-database mariadb -u root -e "
 -- Set password for all existing root users
-SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$DB_ROOT_PASS');
-SET PASSWORD FOR 'root'@'127.0.0.1' = PASSWORD('$DB_ROOT_PASS');
-SET PASSWORD FOR 'root'@'::1' = PASSWORD('$DB_ROOT_PASS');
+SET PASSWORD FOR 'root'@'localhost' = '$DB_ROOT_PASS';
+SET PASSWORD FOR 'root'@'127.0.0.1' = '$DB_ROOT_PASS';
+SET PASSWORD FOR 'root'@'::1' = '$DB_ROOT_PASS';
 -- Update any other root users to have the password
-UPDATE mysql.user SET authentication_string = PASSWORD('$DB_ROOT_PASS'), plugin = 'mysql_native_password' 
-WHERE User = 'root' AND Host != '%' AND Host != '%.bluespice-network' AND authentication_string = '';
+ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASS';
+ALTER USER IF EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '$DB_ROOT_PASS';
+ALTER USER IF EXISTS 'root'@'::1' IDENTIFIED BY '$DB_ROOT_PASS';
 -- Create/update network root users
 CREATE USER IF NOT EXISTS 'root'@'%.bluespice-network' IDENTIFIED BY '$DB_ROOT_PASS';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%.bluespice-network' WITH GRANT OPTION;

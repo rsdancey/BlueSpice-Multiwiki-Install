@@ -32,7 +32,6 @@ services:
       - ${DATA_DIR}/${WIKI_NAME}/extensions/GTag:/app/bluespice/w/extensions/GTag
     environment:
       - WIKI_NAME=${WIKI_NAME}
-      - DB_TYPE=mysql
       - DB_NAME=${DB_NAME}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -70,7 +69,6 @@ services:
     command: ["--runAll"]
     environment:
       - WIKI_NAME=${WIKI_NAME}
-      - DB_TYPE=mysql
       - DB_NAME=${DB_NAME}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}

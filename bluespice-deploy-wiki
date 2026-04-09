@@ -204,23 +204,40 @@ wait_for_healthy() {
     local container="$1"
     local max_attempts=30
     local attempt=1
-    
-    log_info "Waiting for $container to be healthy..."
-    
+
+    log_info "Waiting for $container to be ready..."
+
     while [[ $attempt -le $max_attempts ]]; do
+        # Check if container exists and is running first
+        if ! docker ps --filter name="^/${container}$" --format "{{.Names}}" | grep -q "^${container}$"; then
+            log_warn "Attempt $attempt/$max_attempts: $container not yet running, waiting..."
+            sleep 10
+            ((attempt++))
+            continue
+        fi
+
         local health_status
-        health_status=$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "")
+        health_status=$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "none")
+
         if [[ "$health_status" == "healthy" ]]; then
             log_info "$container is healthy"
             return 0
+        elif [[ -z "$health_status" || "$health_status" == "none" || "$health_status" == "<no value>" ]]; then
+            # No health check configured — treat running state as ready
+            local container_state
+            container_state=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
+            if [[ "$container_state" == "running" ]]; then
+                log_info "$container is running (no health check configured)"
+                return 0
+            fi
         fi
-        
-        log_warn "Attempt $attempt/$max_attempts: $container not yet healthy, waiting..."
+
+        log_warn "Attempt $attempt/$max_attempts: $container not yet ready (status: ${health_status:-unknown}), waiting..."
         sleep 10
         ((attempt++))
     done
-    
-    log_error "$container failed to become healthy after $max_attempts attempts"
+
+    log_error "$container failed to become ready after $max_attempts attempts"
     return 1
 }
 

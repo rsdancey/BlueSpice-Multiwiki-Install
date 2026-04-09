@@ -719,7 +719,6 @@ main() {
     fi
 
     # The initial run-installation includes update.php which runs the ContentProvisioner.
-    # The initial run-installation includes update.php which runs the ContentProvisioner.
     # Template:CircledNumber contains <templatestyles> referencing a styles.css subpage.
     # The first ContentProvisioner run partially creates this page but the TemplateStyles
     # hook fails (broken blob), leaving orphaned revision data. Clean up the broken data
