@@ -577,8 +577,23 @@ main() {
             log_warn "No .env file found in existing directory"
             log_warn "You will need to configure the wiki manually"
         fi
+
+        # Google Analytics GTag
+        echo ""
+        printf "Install Google Analytics (GTag) extension? [y/N]: "
+        read -r install_gtag_choice
+        if [[ "$install_gtag_choice" =~ ^[Yy]$ ]]; then
+            echo ""
+            echo "📊 Google Analytics Configuration:"
+            echo "Configure Google Analytics tracking for your wiki"
+            echo ""
+            prompt_gtag_analytics_id
+        else
+            GTAG_ANALYTICS_ID=""
+            log_info "Skipping GTag extension"
+        fi
     fi
-    
+
     # Get setup mode
     echo
     echo "Setup options:"
@@ -718,40 +733,7 @@ main() {
         fi
     fi
 
-    # The initial run-installation includes update.php which runs the ContentProvisioner.
-    # Template:CircledNumber contains <templatestyles> referencing a styles.css subpage.
-    # The first ContentProvisioner run partially creates this page but the TemplateStyles
-    # hook fails (broken blob), leaving orphaned revision data. Clean up the broken data
-    # and reset the ContentProvisioner log entry so it can run cleanly on the second pass.
-    log_info "Cleaning up broken ContentProvisioner data from initial install..."
-    local _db_name _db_user _db_pass
-    _db_name=$(grep '^DB_NAME=' "${WIKIS_DIR}/${WIKI_NAME}/.env" | cut -d= -f2-)
-    _db_user=$(grep '^DB_USER=' "${WIKIS_DIR}/${WIKI_NAME}/.env" | cut -d= -f2-)
-    _db_pass=$(grep '^DB_PASS=' "${WIKIS_DIR}/${WIKI_NAME}/.env" | cut -d= -f2-)
-    if [[ -n "$_db_name" && -n "$_db_user" && -n "$_db_pass" ]]; then
-        # Delete orphaned slots/content/revisions that reference missing text blobs
-        docker exec bluespice-database mariadb -u "$_db_user" -p"$_db_pass" "$_db_name" -e "
-            DELETE s FROM slots s
-                LEFT JOIN text t ON CAST(SUBSTRING(
-                    (SELECT c.content_address FROM content c WHERE c.content_id = s.slot_content_id),
-                    4) AS UNSIGNED) = t.old_id
-                WHERE (SELECT c.content_address FROM content c WHERE c.content_id = s.slot_content_id) LIKE 'tt:%'
-                AND t.old_id IS NULL;
-            DELETE c FROM content c
-                LEFT JOIN slots s ON s.slot_content_id = c.content_id
-                WHERE s.slot_content_id IS NULL;
-            DELETE r FROM revision r
-                LEFT JOIN slots s ON s.slot_revision_id = r.rev_id
-                WHERE s.slot_revision_id IS NULL AND r.rev_id > 1;
-            DELETE p FROM page p
-                LEFT JOIN revision r ON r.rev_page = p.page_id
-                WHERE r.rev_id IS NULL;
-            DELETE FROM updatelog WHERE ul_key LIKE '%ContentProvisioner%ProvisionContents%';
-        " 2>/dev/null || log_warn "  Blob cleanup query had errors (non-fatal)"
-        log_info "  Cleanup complete"
-    fi
-
-    docker_exec_safe "$WIKI_NAME" "/app/bin/run-maintenance update.php --quick --doshared" || true
+    docker_exec_safe "$WIKI_NAME" "php /app/bluespice/w/maintenance/run.php update --quick" || true
 
     # Rebuild search index
     echo

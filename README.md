@@ -1,22 +1,22 @@
 # BlueSpice MediaWiki Multi-Wiki Deployment System
 
-BlueSpice is an enhanced version of [MediaWiki](https://www.mediawiki.org/wiki/MediaWiki), developed by [Hallo Welt!](https://bluespice.com/). This system provides automated deployment and management of multiple BlueSpice wiki instances on a single host using Docker, with shared infrastructure and isolated per-wiki containers.
+BlueSpice is an enhanced MediaWiki distribution developed by [Hallo Welt!](https://bluespice.com/). This system automates deploying and managing multiple isolated BlueSpice wiki instances on a single host using Docker Compose, with shared infrastructure (database, search, cache, proxy) and per-wiki containers.
 
-**Current BlueSpice version: 5.2.2**
+Repository: https://github.com/rsdancey/BlueSpice-Multiwiki-Install
 
 ---
 
 ## System Requirements
 
-- Debian/Ubuntu Linux (or compatible)
+- Debian/Ubuntu Linux
 - `sudo` access
-- Docker and Docker Compose plugin
+- Docker with the Compose plugin
 - `git`, `curl`, `openssl`
-- Sufficient disk space (~5 GB per wiki minimum)
+- ~5 GB disk space per wiki (minimum)
 
 ---
 
-## Initial Setup
+## First-Time Setup
 
 ### 1. Clone the repository
 
@@ -32,30 +32,34 @@ cd core_install
 ### 2. Install Docker
 
 ```bash
-sudo apt-get install ca-certificates curl gnupg
+sudo apt-get install -y ca-certificates curl gnupg
 sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+curl -fsSL https://download.docker.com/linux/debian/gpg \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
   https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
   | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update && sudo apt-get install docker-compose-plugin
-sudo usermod --append --groups docker $USER
+sudo apt-get update && sudo apt-get install -y docker-compose-plugin
+sudo usermod --append --groups docker "$USER"
 ```
 
 Log out and back in for the group change to take effect.
 
-### 3. Set up shared services
+### 3. Start shared services
 
 ```bash
 ./setup-shared-services
 ```
 
-This creates and starts the infrastructure shared by all wikis:
-- **MariaDB** (`bluespice-database`) — one database server for all wikis, with isolated per-wiki databases and users
-- **OpenSearch** (`bluespice-search`) — full-text search
-- **Memcached** (`bluespice-cache`) — object caching
-- **Nginx** (`bluespice-proxy`) — reverse proxy with Let's Encrypt SSL
+This creates the infrastructure shared by all wikis:
+
+| Service | Container | Role |
+|---|---|---|
+| MariaDB | `bluespice-database` | One DB server; isolated per-wiki databases and users |
+| OpenSearch | `bluespice-search` | Full-text search |
+| Memcached | `bluespice-cache` | Object cache |
+| Nginx | `bluespice-proxy` | Reverse proxy with Let's Encrypt SSL |
 
 This only needs to be run once.
 
@@ -67,28 +71,33 @@ This only needs to be run once.
 ./initialize-wiki
 ```
 
-The interactive wizard will ask for:
-- Wiki name (used as an identifier, e.g. `mywiki`)
+The interactive wizard prompts for:
+
+- Wiki name (identifier, e.g. `mywiki`)
 - Domain name (e.g. `mywiki.example.com`)
 - Language
 - SMTP settings for outbound email
 - SSL preference
+- Optional: restore from a database backup and/or image archive
 
-The script creates:
-- `/core/wikis/{WIKI_NAME}/` — wiki configuration directory
-- `/core/wikis/{WIKI_NAME}/.env` — all settings including auto-generated secrets
-- `/core/wikis/{WIKI_NAME}/docker-compose.main.yml` — container definition
-- `/core/wikis/{WIKI_NAME}/pre-init-settings.php` — PHP loaded before BlueSpice initializes
-- `/core/wikis/{WIKI_NAME}/post-init-settings.php` — PHP loaded after BlueSpice initializes
-- MariaDB database `{WIKI_NAME}_wiki` and user `{WIKI_NAME}_user`
-- Two Docker containers: `bluespice-{WIKI_NAME}-wiki-web` and `bluespice-{WIKI_NAME}-wiki-task`
+The wizard creates:
+
+| Path | Contents |
+|---|---|
+| `/core/wikis/WIKI_NAME/.env` | All settings including auto-generated secrets |
+| `/core/wikis/WIKI_NAME/docker-compose.main.yml` | Container definition |
+| `/core/wikis/WIKI_NAME/pre-init-settings.php` | PHP loaded before BlueSpice initializes |
+| `/core/wikis/WIKI_NAME/post-init-settings.php` | PHP loaded after BlueSpice initializes |
+| `/bluespice/WIKI_NAME/` | Persistent runtime data (uploads, extensions, logs, cache) |
+
+It also creates a MariaDB database `WIKI_NAME_wiki` and user `WIKI_NAME_user`, then starts the wiki containers.
 
 ### Initial admin credentials
 
+Admin username is `WikiSysop`. Retrieve the generated password:
+
 ```bash
-# Admin username is WikiSysop
-# Retrieve the generated password:
-cat /core/wikis/{WIKI_NAME}/admin_password.txt
+cat /bluespice/WIKI_NAME/initialAdminPassword
 ```
 
 ---
@@ -99,83 +108,100 @@ cat /core/wikis/{WIKI_NAME}/admin_password.txt
 
 ```
 /core/
-  core_install/          # This repository — scripts and templates
-    lib/                 # Shared bash libraries
-    wiki-template/       # Template for new wiki docker-compose files
+  core_install/          # This repo — scripts, libraries, templates
+    lib/                 # Bash libraries sourced by the main scripts
+    wiki-template/       # docker-compose template for new wikis
     shared/              # Shared services compose files and .shared.env
+    BLUESPICE_VERSION    # Canonical target version for new installs
   wikis/
-    {WIKI_NAME}/         # Per-wiki configuration (git-tracked)
-      .env               # All settings for this wiki
+    WIKI_NAME/           # Per-wiki configuration (git-tracked)
+      .env
       docker-compose.main.yml
       pre-init-settings.php
       post-init-settings.php
 
 /bluespice/
-  {WIKI_NAME}/           # Per-wiki runtime data (not git-tracked)
+  WIKI_NAME/             # Per-wiki runtime data (not git-tracked)
     images/              # Uploaded files
     extensions/          # OAuth extensions (PluggableAuth, OpenIDConnect)
     logs/                # Update and install logs
     cache/               # Wiki cache files
 
 /opt/bluespice/
-  scripts/               # Container startup wrapper scripts
+  scripts/               # Container entrypoint wrapper scripts
     start-web-wrapper.sh
     start-task-wrapper.sh
 ```
 
-### Container architecture
+### Containers
 
-Each wiki has two containers:
+Each wiki runs two containers:
 
 | Container | Role |
 |---|---|
-| `bluespice-{NAME}-wiki-web` | Serves HTTP/PHP via php-fpm + nginx |
-| `bluespice-{NAME}-wiki-task` | Runs background jobs (`--runAll`) |
+| `bluespice-WIKI_NAME-wiki-web` | Serves HTTP/PHP (php-fpm + nginx) |
+| `bluespice-WIKI_NAME-wiki-task` | Runs background jobs (`--runAll`) |
 
-Both containers mount `/bluespice/{WIKI_NAME}` as `/data/bluespice` inside the container.
+Both containers mount `/bluespice/WIKI_NAME` as `/data/bluespice` inside the container.
 
-### Container startup (5.2.x)
+### Configuration model
 
-The official BlueSpice 5.2.x container image uses `/app/bin/entrypoint` → `init-envs` → `start-web`/`start-task`. Our deployment overrides the entrypoint with wrapper scripts at `/opt/bluespice/scripts/` that:
+BlueSpice 5.x uses `/app/conf/LocalSettings.php` (referenced via `MW_CONFIG_FILE`) as its settings file. This file is baked into the Docker image and reads all configuration from **environment variables** at runtime — there is no generated `LocalSettings.php`.
 
-1. Call `init-envs` and source `/app/.env` (mirrors the official entrypoint)
-2. Restore OAuth extensions from the persistent host volume to `/app/bluespice/w/extensions/`
+Custom settings go in two PHP files on the persistent host volume:
+
+| File | When loaded | Use for |
+|---|---|---|
+| `pre-init-settings.php` | Before BlueSpice initializes | Low-level overrides |
+| `post-init-settings.php` | After BlueSpice initializes | Extensions, SMTP, most customizations |
+
+Host path: `/bluespice/WIKI_NAME/pre-init-settings.php`  
+Container path: `/data/bluespice/pre-init-settings.php`
+
+### Startup wrapper scripts
+
+`/app` inside the container is **ephemeral** — it is reset to the image contents on every container recreate (i.e. on every upgrade). The entrypoint wrapper scripts at `/opt/bluespice/scripts/` override the official entrypoint and:
+
+1. Call `init-envs` and source `/app/.env` to populate secrets into the environment
+2. Restore OAuth extensions from `/data/bluespice/extensions/` into `/app/bluespice/w/extensions/`
 3. Exec the original `start-web` or `start-task` script
-
-This is necessary because `/app` inside the container is ephemeral — it is reset to the image contents on every container recreate (i.e. on every upgrade).
-
-### Configuration files (5.2.x)
-
-BlueSpice 5.2.x uses `/app/conf/LocalSettings.php` (set via `MW_CONFIG_FILE`) rather than the standard MediaWiki `LocalSettings.php` location. This file is fully environment-variable driven and reads configuration from the container's environment at runtime.
-
-Custom settings go in the two init files stored on the persistent host volume:
-
-- **`pre-init-settings.php`** — loaded before BlueSpice initializes; use for low-level overrides
-- **`post-init-settings.php`** — loaded after BlueSpice initializes; use for extensions, SMTP, and most customizations
-
-These files are at `/bluespice/{WIKI_NAME}/pre-init-settings.php` (host) = `/data/bluespice/pre-init-settings.php` (container).
 
 ### Secrets
 
-Each wiki has three auto-generated secrets stored in its `.env` file and passed to the container via docker-compose:
+Each wiki has three secrets stored in its `.env` and passed to the container:
 
 | Variable | Purpose |
 |---|---|
-| `INTERNAL_WIKI_SECRETKEY` | MediaWiki `$wgSecretKey` — required for ResourceLoader, sessions, and CSRF protection |
-| `INTERNAL_WIKI_UPGRADEKEY` | MediaWiki `$wgUpgradeKey` |
+| `INTERNAL_WIKI_SECRETKEY` | `$wgSecretKey` — required for ResourceLoader, sessions, CSRF |
+| `INTERNAL_WIKI_UPGRADEKEY` | `$wgUpgradeKey` |
 | `INTERNAL_WIKI_TOKEN_AUTH_SALT` | Token authenticator salt |
 
-These are generated automatically by `initialize-wiki`. **If they are missing or empty, the wiki UI will display raw message keys like `(bs-xxxxx)` instead of translated strings.**
+Generated automatically by `initialize-wiki`. If missing, the wiki UI displays raw `(bs-xxxxx)` placeholder strings instead of translated text.
 
 ### OAuth / Google login
 
-`PluggableAuth` and `OpenIDConnect` extensions are installed to the persistent host volume at `/bluespice/{WIKI_NAME}/extensions/`. The startup wrapper scripts copy them into the container's `/app` path on each start.
+`PluggableAuth` and `OpenIDConnect` are installed to `/bluespice/WIKI_NAME/extensions/` and restored into the container on each start by the wrapper scripts.
 
-OAuth client credentials are configured via BlueSpice's ConfigManager UI and stored in the wiki database — they are **not** stored in the `.env` file.
+OAuth client credentials are configured via BlueSpice's ConfigManager UI and stored in the wiki database — not in the `.env` file.
 
 ---
 
-## Managing Wikis
+## Scripts Reference
+
+| Script | Purpose |
+|---|---|
+| `initialize-wiki` | Interactive wizard to create a new wiki |
+| `setup-shared-services` | Start/update shared infrastructure (run once) |
+| `upgrade-bluespice` | Upgrade all or selected wikis to a new version |
+| `check-bluespice-versions` | Show running version and container status for all wikis |
+| `bluespice-deploy-wiki` | Start/reinstall containers for a specific wiki |
+| `import-images.sh` | Import an image archive into a wiki's data volume |
+| `smart_db_import.sh` | Import a SQL database dump into a wiki |
+| `mediawiki_backup.sh` | Database backup helper |
+
+---
+
+## Common Operations
 
 ### Check version status
 
@@ -183,60 +209,65 @@ OAuth client credentials are configured via BlueSpice's ConfigManager UI and sto
 ./check-bluespice-versions
 ```
 
-Shows current version, container status, and available updates for all wikis.
-
-### Upgrade all wikis
+### Upgrade wikis
 
 See [UPGRADE_README.md](UPGRADE_README.md) for full details.
 
 ```bash
-./upgrade-bluespice                     # auto-detect latest version
-./upgrade-bluespice --version 5.2.2     # specific version
-./upgrade-bluespice --wiki mywiki       # single wiki only
-./upgrade-bluespice --dry-run           # preview without changes
+./upgrade-bluespice                         # auto-detect latest version, all wikis
+./upgrade-bluespice --version 5.2.3         # specific version
+./upgrade-bluespice --wiki mywiki           # one wiki only
+./upgrade-bluespice --dry-run               # preview without changes
 ```
 
 ### Restart a wiki
 
 ```bash
-docker compose -f /core/wikis/{WIKI_NAME}/docker-compose.main.yml \
-  --env-file /core/wikis/{WIKI_NAME}/.env restart
+docker compose -f /core/wikis/WIKI_NAME/docker-compose.main.yml \
+  --env-file /core/wikis/WIKI_NAME/.env restart
 ```
 
 ### Rebuild search index
 
 ```bash
-docker exec bluespice-{WIKI_NAME}-wiki-web /app/bin/rebuild-searchindex --main
+docker exec bluespice-WIKI_NAME-wiki-web /app/bin/rebuild-searchindex --main
 ```
 
-### Run MediaWiki maintenance
+### Run a MediaWiki maintenance script
 
 ```bash
-docker exec bluespice-{WIKI_NAME}-wiki-web \
-  php /app/bluespice/w/maintenance/run.php {SCRIPT} [OPTIONS]
+docker exec bluespice-WIKI_NAME-wiki-web \
+  php /app/bluespice/w/maintenance/run.php SCRIPT [OPTIONS]
+```
+
+### Test outbound email
+
+```bash
+docker exec bluespice-WIKI_NAME-wiki-web \
+  php /app/bluespice/w/maintenance/sendTestEmail.php --to=you@example.com
 ```
 
 ---
 
 ## Import Utilities
 
-These are run automatically by `initialize-wiki` when restoring from backup, but can also be run independently.
+These run automatically during `initialize-wiki` when restoring from backup, but can be invoked independently.
 
 ### Import a database
 
 ```bash
-./smart_db_import.sh {WIKI_NAME} /path/to/backup.sql
+./smart_db_import.sh WIKI_NAME /path/to/backup.sql
 ```
 
-Use a full SQL dump of the wiki database (not MediaWiki's XML export).
+Use a full SQL dump of the wiki database (not a MediaWiki XML export).
 
 ### Import images
 
 ```bash
-./import-images.sh {WIKI_NAME} /path/to/images.zip
+./import-images.sh WIKI_NAME /path/to/images.zip
 ```
 
-The zip should contain the contents of the wiki's `/images` directory.
+The zip should contain the contents of the wiki's `images/` directory.
 
 ---
 
@@ -246,7 +277,8 @@ The zip should contain the contents of the wiki's `/images` directory.
 BACKUP_DIR="/backup/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$BACKUP_DIR"
 
-# Database
+# All databases
+DB_ROOT_PASS=$(grep DB_ROOT_PASS /core/core_install/shared/.shared.env | cut -d= -f2)
 docker exec bluespice-database \
   mariadb-dump -uroot -p"$DB_ROOT_PASS" --all-databases --single-transaction \
   > "$BACKUP_DIR/all-databases.sql"
@@ -271,27 +303,39 @@ tar -czf "$BACKUP_DIR/core_install.tar.gz" /core/core_install/ /core/wikis/
 docker ps | grep bluespice
 
 # Container logs
-docker logs bluespice-{WIKI_NAME}-wiki-web
-docker logs bluespice-{WIKI_NAME}-wiki-task
+docker logs bluespice-WIKI_NAME-wiki-web
+docker logs bluespice-WIKI_NAME-wiki-task
 
 # Shell into container
-docker exec -it bluespice-{WIKI_NAME}-wiki-web bash
+docker exec -it bluespice-WIKI_NAME-wiki-web bash
 
-# Check what version is running
-docker exec bluespice-{WIKI_NAME}-wiki-web cat /app/bluespice/w/BLUESPICE-VERSION
+# Check running version
+docker exec bluespice-WIKI_NAME-wiki-web cat /app/bluespice/w/BLUESPICE-VERSION
 
 # Verify wgSecretKey is set
-docker exec bluespice-{WIKI_NAME}-wiki-web \
+docker exec bluespice-WIKI_NAME-wiki-web \
   php -r 'echo empty(getenv("INTERNAL_WIKI_SECRETKEY")) ? "MISSING\n" : "OK\n";'
+```
+
+### UI shows `(bs-xxxxx)` placeholder strings
+
+`$wgSecretKey` is empty. Check that `INTERNAL_WIKI_SECRETKEY` exists in `/core/wikis/WIKI_NAME/.env` and is passed via the `docker-compose.main.yml` environment section. Run `upgrade-bluespice --wiki WIKI_NAME --force` to regenerate missing secrets.
+
+### Search returns "Query cannot be executed"
+
+The OpenSearch index has stale field mappings. Rebuild it:
+
+```bash
+docker exec bluespice-WIKI_NAME-wiki-web /app/bin/rebuild-searchindex --main
 ```
 
 ---
 
 ## Contributing
 
-- Shell scripts: lint with `shellcheck`
-- YAML files: lint with `yamllint`
-- Test a fresh `initialize-wiki` run in a development environment before submitting
+- Lint shell scripts with `shellcheck -S style`
+- Lint YAML files with `yamllint`
+- Test a complete `initialize-wiki` run before submitting
 
 ---
 
@@ -299,9 +343,8 @@ docker exec bluespice-{WIKI_NAME}-wiki-web \
 
 [MIT License](https://opensource.org/license/mit)
 
-**THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.**
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
 ---
 
-*This deployment system was created by Ryan S. Dancey, derived from the BlueSpice deployment system by Hallo Welt!*
-*Repository: https://github.com/rsdancey/BlueSpice-Multiwiki-Install*
+*Created by Ryan S. Dancey, derived from the BlueSpice deployment system by Hallo Welt!*

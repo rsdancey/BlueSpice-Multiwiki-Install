@@ -431,6 +431,7 @@ fix_parser_cache() {
         return 0
     fi
 
+    # shellcheck disable=SC2016  # $GLOBALS is PHP code, not a shell variable
     local parser_cache_block='
 # Enable parser cache using the already-configured memcached backend.
 # The bluespice/wiki container sets wgParserCacheType = CACHE_NONE by default,
@@ -612,7 +613,37 @@ upgrade_wiki() {
         /data/bluespice/pre-init-settings.php \
         /data/bluespice/post-init-settings.php 2>/dev/null || true
 
-    # --- Step 7: Run MediaWiki database update ---
+    # --- Step 7a: Clean up broken ContentProvisioner blob data ---
+    # After a version upgrade the ContentProvisioner re-runs and may encounter orphaned
+    # blob references left from a previous partial run (e.g. Template:CircledNumber with
+    # a <templatestyles> subpage that wasn't created yet). Delete the stale data and
+    # reset the ContentProvisioner updatelog entry so it runs cleanly.
+    log_info "  Cleaning up broken ContentProvisioner data before update..."
+    if [[ -n "$db_name" && -n "$db_user" && -n "$db_pass" ]]; then
+        docker exec bluespice-database mariadb -u "$db_user" -p"$db_pass" "$db_name" -e "
+            DELETE s FROM slots s
+                LEFT JOIN text t ON CAST(SUBSTRING(
+                    (SELECT c.content_address FROM content c WHERE c.content_id = s.slot_content_id),
+                    4) AS UNSIGNED) = t.old_id
+                WHERE (SELECT c.content_address FROM content c WHERE c.content_id = s.slot_content_id) LIKE 'tt:%'
+                AND t.old_id IS NULL;
+            DELETE c FROM content c
+                LEFT JOIN slots s ON s.slot_content_id = c.content_id
+                WHERE s.slot_content_id IS NULL;
+            DELETE r FROM revision r
+                LEFT JOIN slots s ON s.slot_revision_id = r.rev_id
+                WHERE s.slot_revision_id IS NULL AND r.rev_id > 1;
+            DELETE p FROM page p
+                LEFT JOIN revision r ON r.rev_page = p.page_id
+                WHERE r.rev_id IS NULL;
+            DELETE FROM updatelog WHERE ul_key LIKE '%ContentProvisioner%ProvisionContents%';
+        " 2>/dev/null || log_warn "  Blob cleanup query had errors (non-fatal)"
+        log_info "  Blob cleanup complete"
+    else
+        log_warn "  Skipping blob cleanup — DB credentials not available"
+    fi
+
+    # --- Step 7b: Run MediaWiki database update ---
     log_info "  Running MediaWiki database update..."
     if docker exec --user root "$container_name" \
         php /app/bluespice/w/maintenance/run.php update --quick; then
@@ -808,6 +839,12 @@ main() {
             failed_wikis+=("$wiki_name")
         fi
     done
+
+    # Update the canonical version file if any wikis succeeded
+    if [[ $success_count -gt 0 && "$DRY_RUN" != "true" ]]; then
+        echo "$TARGET_VERSION" > "${SCRIPT_DIR}/BLUESPICE_VERSION"
+        log_info "Updated BLUESPICE_VERSION to $TARGET_VERSION"
+    fi
 
     log_info ""
     log_info "═══════════════════════════════════════════════════"

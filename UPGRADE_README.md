@@ -1,8 +1,6 @@
 # BlueSpice Multi-Wiki Upgrade Guide
 
-**Current version: 5.2.2**
-
-This guide covers upgrading your BlueSpice multi-wiki installation using the `upgrade-bluespice` script. This is a fully homemade upgrade orchestration system — HelloWalt does not provide a multi-wiki upgrade tool.
+This guide covers upgrading your BlueSpice multi-wiki installation using the `upgrade-bluespice` script. This is a custom upgrade orchestration system — Hallo Welt! does not provide a multi-wiki upgrade tool.
 
 ---
 
