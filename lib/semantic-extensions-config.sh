@@ -236,12 +236,12 @@ run_smw_update() {
         log_warn "  ⚠️ setupStore.php exited non-zero (may be non-fatal — continuing)"
     fi
 
-    log_info "  🔄 Rebuilding SMW data for User namespace (populates User edit count for #ask queries)..."
+    log_info "  🔄 Rebuilding SMW semantic data (populates User edit count and other SESP properties)..."
     if docker_exec_safe "$wiki_name" \
-            "php /app/bluespice/w/extensions/SemanticMediaWiki/maintenance/rebuildData.php --namespace=2 --quiet" 2>/dev/null; then
-        log_info "  ✓ User namespace SMW data rebuilt"
+            "php /app/bluespice/w/extensions/SemanticMediaWiki/maintenance/rebuildData.php --quiet" 2>/dev/null; then
+        log_info "  ✓ SMW semantic data rebuilt"
     else
-        log_warn "  ⚠️ rebuildData.php exited non-zero (may be non-fatal — User edit counts will populate on next page view)"
+        log_warn "  ⚠️ rebuildData.php exited non-zero (may be non-fatal — SESP properties will populate on next page view/edit)"
     fi
 }
 
