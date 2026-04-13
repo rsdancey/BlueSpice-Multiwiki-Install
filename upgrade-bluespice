@@ -482,36 +482,42 @@ upgrade_wiki() {
     log_info "  Edition         : ${edition:-unknown}"
     log_info "  Data dir        : ${data_dir:-unknown}"
 
-    # Skip if already on target version (unless --force)
-    if [[ "$current_version" == "$target_version" ]] && [[ "$FORCE" != "true" ]]; then
-        log_info "  Already on $target_version — skipping (use --force to override)"
-        return 0
-    fi
-
-    # Check OAuth extensions on HOST VOLUME before container recreation.
+    # Check extension presence on HOST VOLUME before any version check or container recreation.
     # We cannot rely on the container's /app path because it is ephemeral.
     local had_oauth=false
     local had_gtag=false
+    local had_semantic=false
     local oauth_host_path="${data_dir}/${wiki_name}/extensions/PluggableAuth/extension.json"
-    if [[ -f "$oauth_host_path" ]]; then
-        had_oauth=true
+    local gtag_host_path="${data_dir}/${wiki_name}/extensions/GTag/extension.json"
+    local smw_host_path="${data_dir}/${wiki_name}/extensions/SemanticMediaWiki/extension.json"
+    [[ -f "$oauth_host_path" ]] && had_oauth=true
+    [[ -f "$gtag_host_path"  ]] && had_gtag=true
+    [[ -f "$smw_host_path"   ]] && had_semantic=true
+
+    # Skip if already on target version (unless --force).
+    # Exception: if SMW is installed, always run setupStore.php — it is idempotent and is
+    # required after a server migration where the DB is fresh (SMW tables never created).
+    if [[ "$current_version" == "$target_version" ]] && [[ "$FORCE" != "true" ]]; then
+        log_info "  Already on $target_version — skipping version upgrade (use --force to override)"
+        if [[ "$had_semantic" == "true" ]]; then
+            log_info "  SMW detected — running setupStore.php to ensure upgrade key is valid..."
+            run_smw_update "$wiki_name"
+        fi
+        return 0
+    fi
+
+    # Log extension presence now that we've decided to proceed with the upgrade.
+    if [[ "$had_oauth" == "true" ]]; then
         log_info "  OAuth extensions present on host — will reinstall after upgrade"
     else
         log_info "  OAuth extensions not found on host — will skip reinstall"
     fi
-
-    local gtag_host_path="${data_dir}/${wiki_name}/extensions/GTag/extension.json"
-    if [[ -f "$gtag_host_path" ]]; then
-        had_gtag=true
+    if [[ "$had_gtag" == "true" ]]; then
         log_info "  GTag extension present on host — will reinstall after upgrade"
     else
         log_info "  GTag extension not found on host — will offer to install"
     fi
-
-    local had_semantic=false
-    local smw_host_path="${data_dir}/${wiki_name}/extensions/SemanticMediaWiki/extension.json"
-    if [[ -f "$smw_host_path" ]]; then
-        had_semantic=true
+    if [[ "$had_semantic" == "true" ]]; then
         log_info "  Semantic extensions present on host — will reinstall after upgrade"
     else
         log_info "  Semantic extensions not found on host — will skip"
