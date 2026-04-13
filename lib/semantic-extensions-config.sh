@@ -238,10 +238,10 @@ run_smw_update() {
 
     log_info "  🔄 Rebuilding SMW data for User namespace (populates User edit count for #ask queries)..."
     if docker_exec_safe "$wiki_name" \
-            "php /app/bluespice/w/maintenance/run.php 'SMW\Maintenance\RebuildData' --namespace=2 --quiet" 2>/dev/null; then
+            "php /app/bluespice/w/extensions/SemanticMediaWiki/maintenance/rebuildData.php --namespace=2 --quiet" 2>/dev/null; then
         log_info "  ✓ User namespace SMW data rebuilt"
     else
-        log_warn "  ⚠️ RebuildData exited non-zero (may be non-fatal — User edit counts will populate on next page view)"
+        log_warn "  ⚠️ rebuildData.php exited non-zero (may be non-fatal — User edit counts will populate on next page view)"
     fi
 }
 
