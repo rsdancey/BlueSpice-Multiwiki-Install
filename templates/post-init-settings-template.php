@@ -125,6 +125,8 @@ if ( file_exists( $smwPath . '/extension.json' ) ) {
 
 if ( file_exists( $sespPath . '/extension.json' ) ) {
     wfLoadExtension( 'SemanticExtraSpecialProperties' );
+    // Enable user edit-count tracking so #ask queries can build contributor leaderboards.
+    $sespgEnabledPropertyList = [ '_USEREDITCNT' ];
 }
 
 # ============================================

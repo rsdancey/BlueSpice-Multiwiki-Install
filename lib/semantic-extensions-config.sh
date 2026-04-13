@@ -235,6 +235,14 @@ run_smw_update() {
     else
         log_warn "  ⚠️ setupStore.php exited non-zero (may be non-fatal — continuing)"
     fi
+
+    log_info "  🔄 Rebuilding SMW data for User namespace (populates User edit count for #ask queries)..."
+    if docker_exec_safe "$wiki_name" \
+            "php /app/bluespice/w/maintenance/run.php 'SMW\Maintenance\RebuildData' --namespace=2 --quiet" 2>/dev/null; then
+        log_info "  ✓ User namespace SMW data rebuilt"
+    else
+        log_warn "  ⚠️ RebuildData exited non-zero (may be non-fatal — User edit counts will populate on next page view)"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -287,6 +295,8 @@ if ( file_exists( $smwPath . '/extension.json' ) ) {
 
 if ( file_exists( $sespPath . '/extension.json' ) ) {
     wfLoadExtension( 'SemanticExtraSpecialProperties' );
+    // Enable user edit-count tracking so #ask queries can build contributor leaderboards.
+    \$sespgEnabledPropertyList = [ '_USEREDITCNT' ];
 }
 SMW_PHP
 
