@@ -253,15 +253,21 @@ run_smw_update() {
     # stdin-forwarding issues with docker_exec_safe (which does not pass -i).
     local sql_tmp="/tmp/smw_usercheck_$$.sql"
     local system_accounts="'WikiSysop','MediaWiki default','Maintenance script','BlueSpice default','BSMaintenance','DynamicPageList3 extension','ChatBot service user'"
+    # Use REPLACE(user_name,' ','_') to match MediaWiki's page-title encoding
+    # (spaces become underscores in the page table).
     docker_exec_safe "$wiki_name" "
-        printf '%s' \"SELECT u.user_name FROM user u LEFT JOIN page p ON p.page_namespace = 2 AND p.page_title = u.user_name WHERE u.user_editcount > 0 AND u.user_name NOT IN (${system_accounts}) AND p.page_id IS NULL;\" > '${sql_tmp}'
+        printf '%s' \"SELECT u.user_name FROM user u LEFT JOIN page p ON p.page_namespace = 2 AND p.page_title = REPLACE(u.user_name,' ','_') WHERE u.user_editcount > 0 AND u.user_name NOT IN (${system_accounts}) AND p.page_id IS NULL;\" > '${sql_tmp}'
     " 2>/dev/null || true
 
     local users_needing_pages
+    # Parse stdClass Object output from run.php sql.
+    # Strip trailing whitespace per-line only — do NOT use tr -d '[:space:]'
+    # which would collapse all newlines and concatenate every username into one
+    # string, causing a single page with all names joined to be created.
     users_needing_pages=$(docker_exec_safe "$wiki_name" \
         "php /app/bluespice/w/maintenance/run.php sql < '${sql_tmp}' 2>/dev/null" \
         2>/dev/null \
-        | grep -E '\[user_name\]' | sed 's/.*\[user_name\] => //' | tr -d '[:space:]')
+        | grep -E '\[user_name\]' | sed 's/.*\[user_name\] => //; s/[[:space:]]*$//')
     docker_exec_safe "$wiki_name" "rm -f '${sql_tmp}'" 2>/dev/null || true
 
     if [[ -z "$users_needing_pages" ]]; then
@@ -402,20 +408,24 @@ setup_semantic_extensions() {
         install_ok=false
     fi
 
-    # Run update.php only when extensions were successfully installed so that
-    # SMW can register its DB schema.
-    if [[ "$install_ok" == "true" ]]; then
-        run_smw_update "$wiki_name"
-    fi
-
-    # Always attempt to write the wfLoadExtension block to post-init-settings,
-    # even when the install step failed.  If the extension files are already on
-    # the volume from a prior run the wiki can still load them; and callers
-    # (update.php at the end of initialize-wiki, or a later upgrade) will create
-    # the DB tables once the extension is visible to MediaWiki.
+    # Write the wfLoadExtension block FIRST so that MediaWiki loads SMW when
+    # update.php and setupStore.php run below.  On fresh installs the settings
+    # file has no SMW block yet, so running setupStore.php before this step
+    # would silently do nothing and leave the upgrade key unwritten.
     if ! add_semantic_to_post_init_settings "$wiki_name"; then
         log_error "❌ Failed to update post-init-settings.php for Semantic extensions"
         return 1
+    fi
+
+    # Run update.php + setupStore.php whenever the SMW extension files are
+    # visible in the container — not just when Composer install succeeded.
+    # A Composer failure must not skip the upgrade-key write if the files
+    # already exist from a prior run.
+    if docker_exec_safe "$wiki_name" \
+            "test -f /app/bluespice/w/extensions/SemanticMediaWiki/extension.json" 2>/dev/null; then
+        run_smw_update "$wiki_name"
+    else
+        log_warn "⚠️  SMW extension.json not visible in container — skipping update.php/setupStore.php"
     fi
 
     if [[ "$install_ok" == "false" ]]; then
