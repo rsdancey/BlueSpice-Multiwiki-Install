@@ -243,6 +243,59 @@ run_smw_update() {
     else
         log_warn "  ⚠️ rebuildData.php exited non-zero (may be non-fatal — SESP properties will populate on next page view/edit)"
     fi
+
+    # SESP only annotates User pages that actually exist in the page table.
+    # Create a blank User page for any real user who doesn't already have one.
+    # "Real" users: editcount > 0 and not a known system account.
+    log_info "  👤 Ensuring User pages exist for real users (required for SESP _USEREDITCNT)..."
+
+    # Write the SQL to a temp file inside the container so we avoid heredoc and
+    # stdin-forwarding issues with docker_exec_safe (which does not pass -i).
+    local sql_tmp="/tmp/smw_usercheck_$$.sql"
+    local system_accounts="'WikiSysop','MediaWiki default','Maintenance script','BlueSpice default','BSMaintenance','DynamicPageList3 extension','ChatBot service user'"
+    docker_exec_safe "$wiki_name" "
+        printf '%s' \"SELECT u.user_name FROM user u LEFT JOIN page p ON p.page_namespace = 2 AND p.page_title = u.user_name WHERE u.user_editcount > 0 AND u.user_name NOT IN (${system_accounts}) AND p.page_id IS NULL;\" > '${sql_tmp}'
+    " 2>/dev/null || true
+
+    local users_needing_pages
+    users_needing_pages=$(docker_exec_safe "$wiki_name" \
+        "php /app/bluespice/w/maintenance/run.php sql < '${sql_tmp}' 2>/dev/null" \
+        2>/dev/null \
+        | grep -E '\[user_name\]' | sed 's/.*\[user_name\] => //' | tr -d '[:space:]')
+    docker_exec_safe "$wiki_name" "rm -f '${sql_tmp}'" 2>/dev/null || true
+
+    if [[ -z "$users_needing_pages" ]]; then
+        log_info "  ✓ All real users already have User pages"
+        return 0
+    fi
+
+    # Create each missing User page.  Content is provided via a container-side
+    # redirect (< /dev/null) so no -i flag is needed on docker exec.
+    local created=0
+    local failed=0
+    while IFS= read -r uname; do
+        [[ -z "$uname" ]] && continue
+        log_info "    Creating User page for: ${uname}"
+        if docker_exec_safe "$wiki_name" \
+                "php /app/bluespice/w/maintenance/run.php edit \
+                    --user '${uname}' \
+                    --summary 'Create user page for SESP annotation' \
+                    'User:${uname}' < /dev/null" \
+                2>/dev/null; then
+            (( created++ )) || true
+        else
+            log_warn "    ⚠️ Could not create User page for ${uname}"
+            (( failed++ )) || true
+        fi
+    done <<< "$users_needing_pages"
+
+    if (( created > 0 )); then
+        log_info "  🔄 Re-running rebuildData to annotate newly created User pages..."
+        docker_exec_safe "$wiki_name" \
+            "php /app/bluespice/w/extensions/SemanticMediaWiki/maintenance/rebuildData.php --quiet" 2>/dev/null || true
+    fi
+
+    log_info "  ✓ User page check complete (created: ${created}, failed: ${failed})"
 }
 
 # ---------------------------------------------------------------------------
