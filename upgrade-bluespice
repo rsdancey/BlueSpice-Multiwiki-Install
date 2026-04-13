@@ -16,7 +16,7 @@ SHARED_DIR="${SCRIPT_DIR}/shared"
 BACKUP_DIR="/tmp/bluespice-upgrade-$(date +%Y%m%d-%H%M%S)"
 
 # Source libraries, then immediately reset any strict mode they may have set
-for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh upstream-check.sh; do
+for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh semantic-extensions-config.sh upstream-check.sh; do
     lib_path="${SCRIPT_DIR}/lib/${lib}"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -508,6 +508,15 @@ upgrade_wiki() {
         log_info "  GTag extension not found on host — will offer to install"
     fi
 
+    local had_semantic=false
+    local smw_host_path="${data_dir}/${wiki_name}/extensions/SemanticMediaWiki/extension.json"
+    if [[ -f "$smw_host_path" ]]; then
+        had_semantic=true
+        log_info "  Semantic extensions present on host — will reinstall after upgrade"
+    else
+        log_info "  Semantic extensions not found on host — will skip"
+    fi
+
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "  [DRY RUN] Steps that would execute:"
         log_info "    1.  Verify/add required env vars in compose file"
@@ -519,7 +528,8 @@ upgrade_wiki() {
         log_info "    5.  docker compose up -d --force-recreate"
         log_info "    6.  Wait for container + fix log dir ownership"
         log_info "    7.  php maintenance/run.php update --quick"
-        [[ "$had_oauth" == "true" ]] && log_info "    8.  install_auth_extensions"
+        [[ "$had_oauth"    == "true" ]] && log_info "    8.  install_auth_extensions"
+        [[ "$had_semantic" == "true" ]] && log_info "    8b. install_semantic_extensions"
         log_info "    9.  Update wgCacheEpoch in post-init-settings.php"
         log_info "    10. Disable mwsgWireServiceWebsocketUrl in post-init-settings.php"
         log_info "    11. Enable parser cache (CACHE_MEMCACHED) in post-init-settings.php"
@@ -543,6 +553,8 @@ upgrade_wiki() {
     ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/PluggableAuth" "/app/bluespice/w/extensions/PluggableAuth"
     ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/OpenIDConnect" "/app/bluespice/w/extensions/OpenIDConnect"
     ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/GTag"          "/app/bluespice/w/extensions/GTag"
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/SemanticMediaWiki"                "/app/bluespice/w/extensions/SemanticMediaWiki"
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/SemanticExtraSpecialProperties"  "/app/bluespice/w/extensions/SemanticExtraSpecialProperties"
 
     # --- Step 1d: Ensure tmpfs mounts are configured ---
     log_info "  Verifying tmpfs mounts..."
@@ -685,6 +697,34 @@ upgrade_wiki() {
             fi
         else
             log_info "  Skipping GTag extension for ${wiki_name}"
+        fi
+    fi
+
+    # --- Step 8c: Reinstall or install Semantic extensions ---
+    # Pass $post_init_file (the data-volume path) so the wfLoadExtension block is
+    # written to the live copy that the container reads, not the config-dir copy.
+    local wiki_dir_local="${WIKIS_DIR}/${wiki_name}"
+    if [[ "$had_semantic" == "true" ]]; then
+        log_info "  Reinstalling Semantic extensions..."
+        if setup_semantic_extensions "$wiki_name" "$wiki_dir_local" "$post_init_file"; then
+            log_info "  Semantic extensions reinstalled successfully"
+        else
+            log_warn "  Semantic extension reinstall failed — SemanticMediaWiki may not work"
+        fi
+    else
+        echo ""
+        echo "  Wiki: ${wiki_name}"
+        printf "  Install SemanticMediaWiki and SemanticExtraSpecialProperties extensions? [y/N]: "
+        read -r install_smw_answer
+        if [[ "$install_smw_answer" =~ ^[Yy]$ ]]; then
+            log_info "  Installing Semantic extensions for ${wiki_name}..."
+            if setup_semantic_extensions "$wiki_name" "$wiki_dir_local" "$post_init_file"; then
+                log_info "  Semantic extensions installed and configured successfully"
+            else
+                log_warn "  Semantic extension setup failed — you can install it manually later"
+            fi
+        else
+            log_info "  Skipping Semantic extensions for ${wiki_name}"
         fi
     fi
 

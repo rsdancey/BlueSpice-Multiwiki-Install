@@ -112,6 +112,22 @@ if ( file_exists( $openIDConnectPath . '/extension.json' ) ) {
 }
 
 # ============================================
+# SemanticMediaWiki + SemanticExtraSpecialProperties
+# ============================================
+# file_exists() guards allow update.php to create DB tables safely and
+# handle containers where the extensions have not been installed.
+$smwPath  = '/app/bluespice/w/extensions/SemanticMediaWiki';
+$sespPath = '/app/bluespice/w/extensions/SemanticExtraSpecialProperties';
+
+if ( file_exists( $smwPath . '/extension.json' ) ) {
+    wfLoadExtension( 'SemanticMediaWiki' );
+}
+
+if ( file_exists( $sespPath . '/extension.json' ) ) {
+    wfLoadExtension( 'SemanticExtraSpecialProperties' );
+}
+
+# ============================================
 # Google OAuth Configuration
 # ============================================
 # Provider credentials are configured via BlueSpice ConfigManager UI

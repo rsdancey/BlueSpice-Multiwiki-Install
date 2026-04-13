@@ -36,9 +36,10 @@ SMTP_HOST=""
 SMTP_PORT="587"
 SMTP_USER=""
 SMTP_PASS=""
+INSTALL_SEMANTIC=false
 
 # Source modular libraries with error checking
-for lib in validation config docker-utils oauth-config gtag-config init-settings-config logrotate-config search-index upstream-check; do
+for lib in validation config docker-utils oauth-config gtag-config semantic-extensions-config init-settings-config logrotate-config search-index upstream-check; do
     lib_path="${SCRIPT_DIR}/lib/${lib}.sh"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -257,9 +258,18 @@ deploy_wiki_instance() {
         return 0
     fi
 
+    # Copy post-init-settings (which already contains the SMW wfLoadExtension block
+    # from the template) into the container NOW, before any extension setup or
+    # update.php calls.  This ensures update.php sees all extensions that are
+    # about to be installed.
+    log_info "Copying configuration files to container..."
+    if ! copy_config_files_to_container "$WIKI_NAME" "${WIKIS_DIR}/${WIKI_NAME}"; then
+        log_error "Failed to copy configuration files to container"
+        return 1
+    fi
+
     # Install and configure OAuth extensions using the new modular system
     log_info "Setting up OAuth extensions..."
-    # need post-init-settings file here
     if ! setup_oauth_extensions "$WIKI_NAME" "$wiki_dir" "$WIKI_DOMAIN"; then
         log_error "CRITICAL: OAuth extension setup failed"
         log_warn "Wiki is functional but OAuth authentication will not work"
@@ -281,6 +291,20 @@ deploy_wiki_instance() {
         fi
     else
         log_info "Skipping GTag extension (not requested)"
+    fi
+
+    # Install SemanticMediaWiki and SemanticExtraSpecialProperties (only if user opted in)
+    if [[ "${INSTALL_SEMANTIC:-false}" == "true" ]]; then
+        log_info "Setting up Semantic extensions..."
+        if ! setup_semantic_extensions "$WIKI_NAME" "$wiki_dir"; then
+            log_error "CRITICAL: Semantic extension setup failed"
+            log_warn "Wiki is functional but SemanticMediaWiki will not be available"
+            log_warn "Manual intervention may be required"
+        else
+            log_info "Semantic extension setup completed successfully"
+        fi
+    else
+        log_info "Skipping Semantic extensions (not requested)"
     fi
 }
 
@@ -557,7 +581,19 @@ main() {
             GTAG_ANALYTICS_ID=""
             log_info "Skipping GTag extension"
         fi
-        
+
+        # SemanticMediaWiki + SemanticExtraSpecialProperties
+        echo ""
+        printf "Install SemanticMediaWiki and SemanticExtraSpecialProperties extensions? [y/N]: "
+        read -r install_semantic_choice
+        if [[ "$install_semantic_choice" =~ ^[Yy]$ ]]; then
+            INSTALL_SEMANTIC=true
+            log_info "SemanticMediaWiki and SemanticExtraSpecialProperties will be installed"
+        else
+            INSTALL_SEMANTIC=false
+            log_info "Skipping Semantic extensions"
+        fi
+
     else
         log_info "Loading existing configuration..."
         # Load existing configuration from .env file
@@ -591,6 +627,18 @@ main() {
         else
             GTAG_ANALYTICS_ID=""
             log_info "Skipping GTag extension"
+        fi
+
+        # SemanticMediaWiki + SemanticExtraSpecialProperties
+        echo ""
+        printf "Install SemanticMediaWiki and SemanticExtraSpecialProperties extensions? [y/N]: "
+        read -r install_semantic_choice
+        if [[ "$install_semantic_choice" =~ ^[Yy]$ ]]; then
+            INSTALL_SEMANTIC=true
+            log_info "SemanticMediaWiki and SemanticExtraSpecialProperties will be installed"
+        else
+            INSTALL_SEMANTIC=false
+            log_info "Skipping Semantic extensions"
         fi
     fi
 
@@ -700,13 +748,6 @@ main() {
         exit 1
     fi
     
-    # Copy configuration files to the running container
-    log_info "Copying configuration files to container..."
-    if ! copy_config_files_to_container "$WIKI_NAME" "${WIKIS_DIR}/${WIKI_NAME}"; then
-        log_error "Writing configuration files to container failed"
-        exit 1
-    fi
-
     # Install per-wiki logrotate configuration on host
     if command -v create_wiki_logrotate_config >/dev/null 2>&1; then
         if ! create_wiki_logrotate_config "$WIKI_NAME" "${DATA_DIR}"; then

@@ -30,6 +30,8 @@ services:
       - ${DATA_DIR}/${WIKI_NAME}/extensions/PluggableAuth:/app/bluespice/w/extensions/PluggableAuth
       - ${DATA_DIR}/${WIKI_NAME}/extensions/OpenIDConnect:/app/bluespice/w/extensions/OpenIDConnect
       - ${DATA_DIR}/${WIKI_NAME}/extensions/GTag:/app/bluespice/w/extensions/GTag
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/SemanticMediaWiki:/app/bluespice/w/extensions/SemanticMediaWiki
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/SemanticExtraSpecialProperties:/app/bluespice/w/extensions/SemanticExtraSpecialProperties
     environment:
       - WIKI_NAME=${WIKI_NAME}
       - DB_NAME=${DB_NAME}
@@ -101,6 +103,8 @@ services:
       - ${DATA_DIR}/${WIKI_NAME}/extensions/PluggableAuth:/app/bluespice/w/extensions/PluggableAuth
       - ${DATA_DIR}/${WIKI_NAME}/extensions/OpenIDConnect:/app/bluespice/w/extensions/OpenIDConnect
       - ${DATA_DIR}/${WIKI_NAME}/extensions/GTag:/app/bluespice/w/extensions/GTag
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/SemanticMediaWiki:/app/bluespice/w/extensions/SemanticMediaWiki
+      - ${DATA_DIR}/${WIKI_NAME}/extensions/SemanticExtraSpecialProperties:/app/bluespice/w/extensions/SemanticExtraSpecialProperties
     <<: *common-config
     labels:
       com.bluespice.service: "wiki-task"
