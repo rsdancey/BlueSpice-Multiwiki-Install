@@ -305,12 +305,63 @@ run_smw_update() {
 }
 
 # ---------------------------------------------------------------------------
+# _update_sesp_property_list
+#   Replace the existing $sespgEnabledPropertyList line in post-init-settings.php
+#   with the canonical three-property list: _USEREDITCNT, _NREV, _MODT.
+#   Uses a PHP script (copied into the container) to avoid shell-quoting issues
+#   with dollar signs and brackets.
+#
+#   Arguments:
+#     wiki_name      – wiki instance name
+#     container_path – path to post-init-settings.php inside the container
+# ---------------------------------------------------------------------------
+_update_sesp_property_list() {
+    local wiki_name="$1"
+    local container_path="$2"
+
+    local host_tmp
+    host_tmp="$(mktemp /tmp/smw_sesp_update_XXXXXX.php)"
+    cat > "$host_tmp" << 'UPDATE_SESP_PHP'
+<?php
+$file = '/data/bluespice/post-init-settings.php';
+$content = file_get_contents($file);
+$updated = preg_replace(
+    '/\$sespgEnabledPropertyList\s*=\s*\[.*?\];/',
+    "\$sespgEnabledPropertyList = [ '_USEREDITCNT', '_NREV', '_MODT' ];",
+    $content
+);
+file_put_contents($file, $updated);
+UPDATE_SESP_PHP
+
+    local container_tmp="/tmp/smw_sesp_update_$$.php"
+    local ok=true
+    if ! docker_copy_to_container "$wiki_name" "$host_tmp" "$container_tmp"; then
+        log_warn "  ⚠️ Failed to copy SESP property-list update script into container"
+        ok=false
+    elif ! docker_exec_safe "$wiki_name" \
+            "php '${container_tmp}' && rm -f '${container_tmp}'" 2>/dev/null; then
+        log_warn "  ⚠️ Failed to execute SESP property-list update script"
+        docker_exec_safe "$wiki_name" "rm -f '${container_tmp}'" 2>/dev/null || true
+        ok=false
+    fi
+    rm -f "$host_tmp"
+
+    if [[ "$ok" == "true" ]]; then
+        log_info "  ✓ SESP property list updated: [ '_USEREDITCNT', '_NREV', '_MODT' ]"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # add_semantic_to_post_init_settings
 #   Append wfLoadExtension calls (with file_exists guards) to the
 #   post-init-settings.php inside the running container.  Writing via
 #   docker_exec_safe (always root) avoids host-side permission issues on
 #   data-volume files owned by the container user (uid 1002).
-#   Idempotent — skips if the block is already present.
+#   Idempotent — skips if the block is already present AND the SESP property
+#   list already includes _USEREDITCNT, _NREV, and _MODT.  When the block is
+#   present but the property list is stale (e.g. upgraded from a version that
+#   only enabled _USEREDITCNT), the property list is updated in-place so that
+#   the next rebuildData.php call populates _NREV and _MODT.
 #
 #   Arguments:
 #     wiki_name – wiki instance name (used to docker-exec into the container)
@@ -327,7 +378,25 @@ add_semantic_to_post_init_settings() {
 
     if docker_exec_safe "$wiki_name" \
             "grep -q 'SemanticMediaWiki' '${container_path}'" 2>/dev/null; then
-        log_info "  SemanticMediaWiki already configured in post-init-settings.php — skipping"
+        # SMW block already present — check that the SESP property list is up-to-date.
+        # Earlier revisions only enabled _USEREDITCNT; _NREV and _MODT were added
+        # later and are required for "Most Edited Pages" and related SMW queries.
+        local needs_prop_update=false
+        for prop in _NREV _MODT; do
+            if ! docker_exec_safe "$wiki_name" \
+                    "grep -q \"'${prop}'\" '${container_path}'" 2>/dev/null; then
+                needs_prop_update=true
+                break
+            fi
+        done
+
+        if [[ "$needs_prop_update" == "false" ]]; then
+            log_info "  SemanticMediaWiki already configured with all required SESP properties — skipping"
+            return 0
+        fi
+
+        log_info "  SESP property list is missing _NREV or _MODT — updating..."
+        _update_sesp_property_list "$wiki_name" "$container_path"
         return 0
     fi
 
@@ -412,6 +481,8 @@ setup_semantic_extensions() {
     # update.php and setupStore.php run below.  On fresh installs the settings
     # file has no SMW block yet, so running setupStore.php before this step
     # would silently do nothing and leave the upgrade key unwritten.
+    # Also ensures the correct SESP property list (_USEREDITCNT, _NREV, _MODT)
+    # is active when semantic data is rebuilt.
     if ! add_semantic_to_post_init_settings "$wiki_name"; then
         log_error "❌ Failed to update post-init-settings.php for Semantic extensions"
         return 1
@@ -420,7 +491,8 @@ setup_semantic_extensions() {
     # Run update.php + setupStore.php whenever the SMW extension files are
     # visible in the container — not just when Composer install succeeded.
     # A Composer failure must not skip the upgrade-key write if the files
-    # already exist from a prior run.
+    # already exist from a prior run.  rebuildData runs after the config
+    # update above so _NREV and _MODT are enabled and populated.
     if docker_exec_safe "$wiki_name" \
             "test -f /app/bluespice/w/extensions/SemanticMediaWiki/extension.json" 2>/dev/null; then
         run_smw_update "$wiki_name"
