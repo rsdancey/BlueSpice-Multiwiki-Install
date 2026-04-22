@@ -12,6 +12,15 @@
 # Set a useable /tmp directory
 # $GLOBALS['mwsgRunJobsTriggerRunnerWorkingDir'] = '/tmp/wiki';
 
+# ============================================
+# Debug Logging (opt-in via env var)
+# ============================================
+# Set DEV_WIKI_DEBUG_LOGFILE=/data/bluespice/logs/mw-debug.log in the container
+# environment to enable MediaWiki debug logging. Do NOT enable in production.
+if ( getenv( 'DEV_WIKI_DEBUG_LOGFILE' ) ) {
+    $wgDebugLogFile = getenv( 'DEV_WIKI_DEBUG_LOGFILE' );
+}
+
 # Override the default with a bundle of filetypes:
 $wgFileExtensions = array('png', 'gif', 'jpg', 'jpeg', 'ppt', 'pdf', 
 'psd', 'mp3', 'xls', 'xlsx', 'doc','docx', 'mp4', 'mov', 'ico' );

@@ -48,6 +48,7 @@ services:
       - LETSENCRYPT_HOST=${LETSENCRYPT_HOST}
       - WIKI_HOST=${WIKI_HOST}
       - WIKI_PROTOCOL=https
+      - WIKI_PORT=443
       - WIKI_SERVER=https://${WIKI_HOST}
       - DATADIR=/data/bluespice
       - WIKI_PRE_INIT_SETTINGS_FILE=/data/bluespice/pre-init-settings.php
@@ -82,6 +83,7 @@ services:
       - EDITION=${EDITION}
       - WIKI_HOST=${WIKI_HOST}
       - WIKI_PROTOCOL=https
+      - WIKI_PORT=443
       - WIKI_SERVER=https://${WIKI_HOST}
       - DATADIR=/data/bluespice
       - WIKI_PRE_INIT_SETTINGS_FILE=/data/bluespice/pre-init-settings.php
