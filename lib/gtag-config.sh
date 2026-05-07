@@ -181,6 +181,14 @@ add_gtag_to_post_init_settings() {
 
     # Check if GTag config already exists
     if grep -q "wgGTagAnalyticsId" "$post_init_file"; then
+        # If the block is present but has an empty ID, patch it in place
+        local existing_id
+        existing_id=$(grep "wgGTagAnalyticsId" "$post_init_file" | sed "s/.*= *'\\([^']*\\)'.*/\\1/")
+        if [[ -z "$existing_id" && -n "$analytics_id" ]]; then
+            sed -i "s/\\\$wgGTagAnalyticsId = '';/\$wgGTagAnalyticsId = '${analytics_id}';/" "$post_init_file"
+            log_info "  Updated empty GTag analytics ID in $(basename "$post_init_file")"
+            return 0
+        fi
         log_info "  GTag configuration already present in $(basename "$post_init_file") — skipping"
         return 0
     fi

@@ -97,9 +97,10 @@ $wgSMTP = [
 # GTag Extension (Google Analytics)
 # ============================================
 $gtagPath = '/app/bluespice/w/extensions/GTag';
-if ( file_exists( $gtagPath . '/extension.json' ) ) {
+$gtagAnalyticsId = '{{GTAG_ANALYTICS_ID}}';
+if ( file_exists( $gtagPath . '/extension.json' ) && $gtagAnalyticsId !== '' ) {
     wfLoadExtension( 'GTag' );
-    $wgGTagAnalyticsId = '{{GTAG_ANALYTICS_ID}}';
+    $wgGTagAnalyticsId = $gtagAnalyticsId;
 }
 
 
