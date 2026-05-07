@@ -187,7 +187,11 @@ add_gtag_to_post_init_settings() {
         if [[ -z "$existing_id" && -n "$analytics_id" ]]; then
             sed -i "s/\\\$wgGTagAnalyticsId = '';/\$wgGTagAnalyticsId = '${analytics_id}';/" "$post_init_file"
             log_info "  Updated empty GTag analytics ID in $(basename "$post_init_file")"
-            return 0
+        fi
+        # Ensure CSP allowlist is present regardless of whether ID was patched
+        if ! grep -q "googletagmanager.com" "$post_init_file"; then
+            sed -i "/\\\$wgGTagAnalyticsId/a\\    \$wgCSPHeader['script-src'][] = '*.googletagmanager.com';" "$post_init_file"
+            log_info "  Added googletagmanager.com to CSP script-src in $(basename "$post_init_file")"
         fi
         log_info "  GTag configuration already present in $(basename "$post_init_file") — skipping"
         return 0
@@ -204,6 +208,7 @@ add_gtag_to_post_init_settings() {
 if ( file_exists( \$gtagPath . '/extension.json' ) ) {
     wfLoadExtension( 'GTag' );
     \$wgGTagAnalyticsId = '${analytics_id}';
+    \$wgCSPHeader['script-src'][] = '*.googletagmanager.com';
 }
 GTAG_PHP
 

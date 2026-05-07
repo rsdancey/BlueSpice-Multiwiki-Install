@@ -101,6 +101,7 @@ $gtagAnalyticsId = '{{GTAG_ANALYTICS_ID}}';
 if ( file_exists( $gtagPath . '/extension.json' ) && $gtagAnalyticsId !== '' ) {
     wfLoadExtension( 'GTag' );
     $wgGTagAnalyticsId = $gtagAnalyticsId;
+    $wgCSPHeader['script-src'][] = '*.googletagmanager.com';
 }
 
 
