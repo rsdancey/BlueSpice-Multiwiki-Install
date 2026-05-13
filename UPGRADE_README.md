@@ -15,8 +15,8 @@ The script is fully interactive. It will:
 1. Auto-detect the latest BlueSpice version from Docker Hub
 2. Ask whether to upgrade **shared services** or a **single wiki**
 3. For a wiki upgrade: list available wikis, then ask whether to install or remove each optional extension:
-   - Google Analytics (GTag)
    - OAuth / Google login (PluggableAuth + OpenIDConnect)
+   - Google Analytics (GTag)
    - Semantic Web (SemanticMediaWiki + SESP)
 4. Perform the upgrade, installing or actively removing each extension as requested
 
@@ -48,22 +48,38 @@ The upgrade script automatically backs up each wiki's `.env` file to `/tmp/blues
 
 For the selected wiki, `upgrade-bluespice` runs the following steps in order:
 
+### 0. Remove unwanted extensions
+If the user answered **no** to an extension that is currently installed, its files are removed from the host volume and its configuration block is removed from `post-init-settings.php` **before** the container is recreated. This ensures the new container starts clean without loading the removed extension.
+
+| Extension | What is removed |
+|---|---|
+| **OAuth** | `/bluespice/WIKI_NAME/extensions/PluggableAuth/` and `OpenIDConnect/` (OAuth credentials stored in the database are not touched — disable OAuth via ConfigManager if needed) |
+| **GTag** | `/bluespice/WIKI_NAME/extensions/GTag/`, the GTag config block from `post-init-settings.php`, and `GTAG_ANALYTICS_ID` from `.env` |
+| **Semantic** | `/bluespice/WIKI_NAME/extensions/SemanticMediaWiki/` and `SemanticExtraSpecialProperties/`, and the SMW/SESP config block from `post-init-settings.php` |
+
 ### 1. Verify compose file env vars
-Ensures these variables are present in the wiki's `docker-compose.main.yml`:
-- `DATADIR`
-- `WIKI_PRE_INIT_SETTINGS_FILE` / `WIKI_POST_INIT_SETTINGS_FILE`
-- `CACHE_HOST` / `CACHE_PORT`
+Ensures these variables are present in the wiki's `docker-compose.main.yml` (adds them if missing):
+- `DATADIR`, `WIKI_PRE_INIT_SETTINGS_FILE`, `WIKI_POST_INIT_SETTINGS_FILE`
+- `WIKI_PORT`, `CACHE_HOST`, `CACHE_PORT`, `DB_TYPE`
+- `INTERNAL_WIRE_API_KEY`
 
 ### 1b. Verify INTERNAL_WIKI_* secrets
-BlueSpice 5.2.x requires three secrets to be set:
+BlueSpice 5.2.x requires four secrets:
 
 | Variable | Purpose |
 |---|---|
 | `INTERNAL_WIKI_SECRETKEY` | `$wgSecretKey` — required for ResourceLoader and sessions |
 | `INTERNAL_WIKI_UPGRADEKEY` | `$wgUpgradeKey` |
 | `INTERNAL_WIKI_TOKEN_AUTH_SALT` | Token authenticator salt |
+| `INTERNAL_WIRE_API_KEY` | Wire collaboration service API key |
 
-If any are missing from the wiki's `.env`, the script generates them with `openssl rand -hex 32` and adds them automatically. Without these, the wiki UI shows raw `(bs-xxxxx)` placeholder strings.
+Any missing from the wiki's `.env` are generated with `openssl rand -hex 32` and added automatically. Without these, the wiki UI shows raw `(bs-xxxxx)` placeholder strings.
+
+### 1c. Verify extension volume mounts
+Ensures bind-mounts for all five extension directories appear in `docker-compose.main.yml` (adds them if missing). The mounts are always added regardless of whether the extension is installed — `file_exists()` guards in `post-init-settings.php` prevent loading when the directory is empty.
+
+### 1d. Verify tmpfs mounts
+Ensures `/tmp/wiki` tmpfs entries are configured for both `wiki-web` and `wiki-task` services.
 
 ### 2. Pull the new Docker image
 
@@ -72,10 +88,10 @@ docker pull bluespice/wiki:VERSION
 ```
 
 ### 3. Update `.env`
-Backs up the current `.env` to `$BACKUP_DIR`, then updates `VERSION` and `BLUESPICE_WIKI_IMAGE`.
+Backs up the current `.env` to `$BACKUP_DIR`, then updates `VERSION` and `BLUESPICE_WIKI_IMAGE`. Also adds `DB_TYPE`, `CACHE_HOST`, and `CACHE_PORT` if missing.
 
 ### 4. Pre-create log directories
-Creates `preupdate/` and `postupdate/` directories under `/data/bluespice/logs/` before the container starts. The BlueSpice `run-updates` pipeline writes logs here; if they don't exist, it crashes.
+Creates `preupdate/` and `postupdate/` directories under `/bluespice/WIKI_NAME/logs/` before the container starts. The BlueSpice `run-updates` pipeline writes logs here; if they don't exist, it crashes.
 
 ### 5. Recreate containers
 
@@ -83,12 +99,15 @@ Creates `preupdate/` and `postupdate/` directories under `/data/bluespice/logs/`
 docker compose up -d --force-recreate
 ```
 
-`/app` inside the container is ephemeral and is wiped here. Persistent data at `/data/bluespice/` (host path: `/bluespice/{WIKI_NAME}/`) is retained.
+`/app` inside the container is ephemeral and is wiped here. Persistent data at `/data/bluespice/` (host path: `/bluespice/WIKI_NAME/`) is retained.
 
 ### 6. Wait for container + fix log ownership
-Waits up to 120 seconds for the container to become healthy, then fixes ownership of the log directories so `run-updates` can write to them.
+Waits up to 120 seconds for the container to become healthy, then fixes ownership of the log directories so `run-updates` can write to them. Also ensures `post-init-settings.php` is group-writable so the upgrade script can modify it.
 
-### 7. Run MediaWiki database update
+### 7a. Clean up ContentProvisioner blob data
+Removes orphaned blob references left by prior partial runs of the ContentProvisioner (e.g. template pages with missing subpage slots). Resets the ContentProvisioner `updatelog` entry so it re-runs cleanly. This prevents `update.php` from failing on stale content.
+
+### 7b. Run MediaWiki database update
 
 ```
 php /app/bluespice/w/maintenance/run.php update --quick
@@ -96,16 +115,8 @@ php /app/bluespice/w/maintenance/run.php update --quick
 
 Applies any database schema changes required by the new version.
 
-### 0 (pre-upgrade). Remove unwanted extensions
-If the user answered **no** to an extension that is currently installed, its files are removed from the host volume and its configuration block is removed from `post-init-settings.php` **before** the container is recreated. This ensures the new container starts clean without loading the removed extension.
-
-Extensions removed this way:
-- **GTag**: deletes `/bluespice/WIKI_NAME/extensions/GTag/`, removes the GTag config block from `post-init-settings.php`, and removes `GTAG_ANALYTICS_ID` from `.env`
-- **OAuth**: deletes `/bluespice/WIKI_NAME/extensions/PluggableAuth/` and `OpenIDConnect/` (OAuth credentials stored in the database are not touched — disable OAuth via ConfigManager if needed)
-- **Semantic**: deletes `/bluespice/WIKI_NAME/extensions/SemanticMediaWiki/` and `SemanticExtraSpecialProperties/`, removes the SMW config block from `post-init-settings.php`
-
 ### 8. Install / reinstall extensions
-After `update.php` completes, extensions the user answered **yes** to are installed (or reinstalled if already present). All install functions are idempotent.
+Extensions the user answered **yes** to are installed (or reinstalled if already present). All install functions are idempotent.
 
 | Extension | Action |
 |---|---|
@@ -116,17 +127,23 @@ After `update.php` completes, extensions the user answered **yes** to are instal
 ### 9. Bump wgCacheEpoch
 Updates the `$wgCacheEpoch` timestamp in `post-init-settings.php` to bust stale browser and server caches.
 
-### 10. Fix PermissionManagerActivePreset
+### 10. Re-enable wire WebSocket URL
+Removes any `mwsgWireServiceWebsocketUrl=''` override added by older installer versions. The wire collaboration container is now always deployed, so the override is no longer needed.
+
+### 11. Enable parser cache
+Adds `$GLOBALS['wgParserCacheType'] = CACHE_MEMCACHED` to `post-init-settings.php` if not already set. The BlueSpice container image defaults to `CACHE_NONE`, forcing a full wikitext re-parse on every page view. Enabling memcached here significantly reduces page load times.
+
+### 12. Fix PermissionManagerActivePreset
 For Free-edition wikis: if `PermissionManagerActivePreset` is set to `custom` (which is invalid for Free edition), it resets it to `public` to prevent permission errors.
 
-### 11. Rebuild search index
+### 13. Rebuild search index
 Recreates OpenSearch indices with the current BlueSpice field mappings:
 
 ```
 /app/bin/rebuild-searchindex --main
 ```
 
-This is required when a new BlueSpice version adds index fields (e.g. `suggestions-spellcheck` added in 5.2.x). Without it, searches throw `BadRequest400Exception` and the UI shows "Query cannot be executed, please change the search term."
+Required when a new BlueSpice version adds index fields (e.g. `suggestions-spellcheck` added in 5.2.x). Without this, searches throw `BadRequest400Exception` and the UI shows "Query cannot be executed, please change the search term."
 
 ---
 
@@ -155,7 +172,7 @@ Always upgrade shared services before upgrading any wiki, so the database is run
 ./upgrade-bluespice
 # → choose: 2) A wiki
 # → select the wiki by number
-# → answer y/n for GTag, OAuth, Semantic Web
+# → answer y/n for OAuth, GTag, Semantic Web
 ```
 
 ### Re-run if the wiki is already on the target version
