@@ -192,12 +192,23 @@ OAuth client credentials are configured via BlueSpice's ConfigManager UI and sto
 |---|---|
 | `initialize-wiki` | Interactive wizard to create a new wiki |
 | `setup-shared-services` | Start/update shared infrastructure (run once) |
-| `upgrade-bluespice` | Upgrade all or selected wikis to a new version |
+| `bluespice-shared-services` | Start, stop, or check status of shared services |
+| `upgrade-bluespice` | Interactive upgrade: shared services or a single wiki |
 | `check-bluespice-versions` | Show running version and container status for all wikis |
 | `bluespice-deploy-wiki` | Start/reinstall containers for a specific wiki |
 | `import-images.sh` | Import an image archive into a wiki's data volume |
 | `smart_db_import.sh` | Import a SQL database dump into a wiki |
 | `mediawiki_backup.sh` | Database backup helper |
+
+### bluespice-shared-services
+
+```bash
+./bluespice-shared-services start           # start all shared services
+./bluespice-shared-services stop            # stop all shared services
+./bluespice-shared-services restart         # restart all shared services
+./bluespice-shared-services status          # show status of shared containers
+./bluespice-shared-services --help          # show available subcommands
+```
 
 ---
 
@@ -214,11 +225,15 @@ OAuth client credentials are configured via BlueSpice's ConfigManager UI and sto
 See [UPGRADE_README.md](UPGRADE_README.md) for full details.
 
 ```bash
-./upgrade-bluespice                         # auto-detect latest version, all wikis
-./upgrade-bluespice --version 5.2.3         # specific version
-./upgrade-bluespice --wiki mywiki           # one wiki only
-./upgrade-bluespice --dry-run               # preview without changes
+./upgrade-bluespice
 ```
+
+The script is interactive. It will:
+
+1. Auto-detect the latest BlueSpice version from Docker Hub
+2. Ask whether to upgrade shared services or a single wiki
+3. For a wiki upgrade: list available wikis, then ask whether to install or remove Google Analytics (GTag), OAuth, and Semantic Web (SemanticMediaWiki + SESP) support
+4. Perform the upgrade, installing or removing each extension as requested
 
 ### Restart a wiki
 
@@ -256,15 +271,15 @@ These run automatically during `initialize-wiki` when restoring from backup, but
 ### Import a database
 
 ```bash
-./smart_db_import.sh WIKI_NAME /path/to/backup.sql
+./smart_db_import.sh /path/to/backup.sql [wiki_dir]
 ```
 
-Use a full SQL dump of the wiki database (not a MediaWiki XML export).
+`wiki_dir` is the path to the wiki's config directory (e.g. `/core/wikis/WIKI_NAME`); it defaults to the current directory. The script reads DB credentials from the `.env` file found there. Use a full SQL dump of the wiki database (not a MediaWiki XML export).
 
 ### Import images
 
 ```bash
-./import-images.sh WIKI_NAME /path/to/images.zip
+./import-images.sh --wiki-name=WIKI_NAME --images-archive=/path/to/images.zip
 ```
 
 The zip should contain the contents of the wiki's `images/` directory.

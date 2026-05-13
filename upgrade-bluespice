@@ -1,14 +1,16 @@
 #!/bin/bash
-# BlueSpice Multi-Wiki Upgrade Script
-# Upgrades all wikis (and optionally shared infrastructure) to a new BlueSpice version.
+# BlueSpice Wiki Upgrade Script
+#
+# Interactive: choose between upgrading shared services or a single wiki.
+# For wiki upgrades, prompts for Google Analytics, OAuth, and Semantic Web
+# support — installing or removing each as requested.
 #
 # Key design decisions:
 #   - No global set -euo pipefail; each step is checked individually
 #   - Strict mode from docker-utils.sh is explicitly reset after sourcing
-#   - OAuth extension presence is checked on the HOST volume before container recreation
-#   - update.php is run directly via docker exec (not via bluespice-deploy-wiki)
-#   - Each wiki is upgraded independently; failure of one does not stop others
-#   - Required env vars (CACHE_HOST etc.) are verified/added to compose files before upgrade
+#   - Extension presence is checked on the HOST volume before container recreation
+#   - Removal of extensions happens BEFORE container recreation
+#   - Installation of extensions happens AFTER container recreation and update.php
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKIS_DIR="$(dirname "$SCRIPT_DIR")/wikis"
@@ -27,50 +29,6 @@ for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh semantic-ex
 done
 # docker-utils.sh has `set -euo pipefail` — reset it so it does not affect this script
 set +e; set +u; set +o pipefail 2>/dev/null || true
-
-# ============================================================
-# Argument parsing
-# ============================================================
-TARGET_VERSION=""
-FORCE=false
-SPECIFIC_WIKI=""
-SKIP_SHARED=false
-DRY_RUN=false
-
-usage() {
-    cat <<USAGE
-Usage: $0 [OPTIONS]
-
-Upgrade BlueSpice wikis to a new version.
-
-OPTIONS:
-  -v, --version VERSION   Target version (default: auto-detect from Docker Hub)
-  -f, --force             Re-run upgrade even if already on target version
-  -w, --wiki WIKI_NAME    Upgrade only the named wiki (default: all)
-  -s, --skip-shared       Skip shared services (DB, cache, proxy) upgrade
-  -n, --dry-run           Show what would be done without making changes
-  -h, --help              Show this help
-
-EXAMPLES:
-  $0                          # Auto-detect latest and upgrade all wikis
-  $0 --version 5.2.2          # Upgrade all wikis to 5.2.2
-  $0 --version 5.2.2 --wiki mywiki  # Upgrade only mywiki to 5.2.2
-  $0 --skip-shared            # Upgrade wikis only, leave shared services alone
-USAGE
-    exit 1
-}
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        -v|--version)     TARGET_VERSION="$2"; shift 2 ;;
-        -f|--force)       FORCE=true; shift ;;
-        -w|--wiki)        SPECIFIC_WIKI="$2"; shift 2 ;;
-        -s|--skip-shared) SKIP_SHARED=true; shift ;;
-        -n|--dry-run)     DRY_RUN=true; shift ;;
-        -h|--help)        usage ;;
-        *) log_error "Unknown option: $1"; usage ;;
-    esac
-done
 
 # ============================================================
 # Utility functions
@@ -102,27 +60,71 @@ read_env_var() {
     grep "^${var}=" "$file" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'"
 }
 
+# Prompt for a yes/no answer. Prints "true" or "false" to stdout.
+ask_yes_no() {
+    local prompt="$1"
+    local answer
+    while true; do
+        printf "%s [y/n]: " "$prompt"
+        read -r answer
+        case "$answer" in
+            [Yy]) echo "true";  return 0 ;;
+            [Nn]) echo "false"; return 0 ;;
+            *)    echo "Please answer y or n." >&2 ;;
+        esac
+    done
+}
+
+# List available wikis and prompt the user to select one.
+# Prints the chosen wiki name to stdout.
+select_wiki() {
+    local wikis=()
+    for wiki_dir in "${WIKIS_DIR}"/*/; do
+        if [[ -d "$wiki_dir" && -f "${wiki_dir}/.env" ]]; then
+            wikis+=("$(basename "$wiki_dir")")
+        fi
+    done
+
+    if [[ ${#wikis[@]} -eq 0 ]]; then
+        log_error "No wikis found in $WIKIS_DIR"
+        exit 1
+    fi
+
+    echo ""
+    echo "Available wikis:"
+    local i=1
+    for w in "${wikis[@]}"; do
+        echo "  $i) $w"
+        i=$((i + 1))
+    done
+    echo ""
+
+    local choice
+    while true; do
+        printf "Select wiki (1-%d): " "${#wikis[@]}"
+        read -r choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#wikis[@]} )); then
+            echo "${wikis[$((choice - 1))]}"
+            return 0
+        fi
+        echo "Invalid choice. Enter a number between 1 and ${#wikis[@]}." >&2
+    done
+}
+
 # Ensure a VAR=VALUE line appears in BOTH service blocks of a docker-compose file.
-# Inserts the line immediately before each `<<: *common-config` anchor if missing.
 ensure_compose_env_var() {
     local compose_file="$1"
     local var_name="$2"
     local var_value="$3"
 
-    # Count how many times this var appears (expect 2 — wiki-web and wiki-task)
     local count
     count=$(grep -c "^\s*- ${var_name}=" "$compose_file" 2>/dev/null || echo 0)
 
     if [[ "$count" -ge 2 ]]; then
-        return 0  # Already present in both service blocks
+        return 0
     fi
 
     log_warn "    ${var_name} missing from $(basename "$compose_file") — adding..."
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "    [DRY RUN] Would add ${var_name}=${var_value}"
-        return 0
-    fi
 
     python3 - "$compose_file" "$var_name" "$var_value" << 'PYEOF'
 import re, sys
@@ -133,11 +135,6 @@ var_line = f'      - {var_name}={var_value}\n'
 with open(compose_file, 'r') as f:
     lines = f.readlines()
 
-# Walk the file and insert var_line at the end of each `environment:` block.
-# An environment block (4-space indent header) ends when we see a non-blank
-# line that does NOT start with 6 spaces (i.e. the next top-level service key).
-# This is safer than the old approach of inserting before <<: *common-config,
-# which could appear after a volumes: block rather than environment:.
 new_lines = []
 in_environment = False
 added = 0
@@ -151,19 +148,16 @@ for line in lines:
         continue
 
     if in_environment:
-        # Still inside the block: 6-space-indented items or blank lines
         if re.match(r'^      ', stripped) or stripped == '':
             new_lines.append(line)
             continue
         else:
-            # First line that belongs to the next block — insert here
             new_lines.append(var_line)
             added += 1
             in_environment = False
 
     new_lines.append(line)
 
-# Handle environment block at end of file
 if in_environment:
     new_lines.append(var_line)
     added += 1
@@ -184,7 +178,6 @@ PYEOF
 }
 
 # Ensure a volume mount appears in BOTH service blocks of a docker-compose file.
-# host_path and container_path are the two sides of the mount.
 ensure_compose_volume_mount() {
     local compose_file="$1"
     local host_path="$2"
@@ -195,15 +188,10 @@ ensure_compose_volume_mount() {
     count=$(grep -cF "$search_str" "$compose_file" 2>/dev/null | head -1 | tr -d "[:space:]"); count="${count:-0}"
 
     if [[ "$count" -ge 2 ]]; then
-        return 0  # Already present in both service blocks
+        return 0
     fi
 
     log_warn "    Volume mount ${container_path} missing — adding..."
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "    [DRY RUN] Would add ${host_path}:${container_path}"
-        return 0
-    fi
 
     python3 - "$compose_file" "$host_path" "$container_path" << 'PYEOF2'
 import sys
@@ -214,7 +202,6 @@ mount_line = f'      - {host_path}:{container_path}\n'
 with open(compose_file, 'r') as f:
     lines = f.readlines()
 
-# Insert mount_line at the end of each volumes: block (before next non-volume line)
 new_lines = []
 in_volumes = False
 added = 0
@@ -228,7 +215,6 @@ for i, line in enumerate(lines):
     if in_volumes:
         if stripped.startswith('- ') and line.startswith('      '):
             new_lines.append(line)
-            # Check if next line is still a volume entry
             next_line = lines[i+1] if i+1 < len(lines) else ''
             if not (next_line.strip().startswith('- ') and next_line.startswith('      ')):
                 if mount_line not in new_lines[-10:]:
@@ -248,21 +234,13 @@ PYEOF2
 }
 
 # Ensure a tmpfs entry appears in a service block of a docker-compose file.
-# Usage: ensure_compose_tmpfs <compose_file> <tmpfs_entry> [service_name]
-# If service_name is given, only that service is checked/modified.
 ensure_compose_tmpfs() {
     local compose_file="$1"
     local tmpfs_entry="$2"
     local service_name="${3:-}"
     local service_label="${service_name:-all services}"
 
-    # Let add_tmpfs.py handle idempotency — it exits cleanly if already present
     log_info "    Checking tmpfs ${tmpfs_entry} in ${service_label}..."
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "    [DRY RUN] Would ensure tmpfs: - ${tmpfs_entry} in ${service_label}"
-        return 0
-    fi
 
     local cmd_args=("${SCRIPT_DIR}/lib/add_tmpfs.py" "$compose_file" "$tmpfs_entry")
     if [[ -n "$service_name" ]]; then
@@ -270,13 +248,11 @@ ensure_compose_tmpfs() {
     fi
 
     if ! python3 "${cmd_args[@]}"; then
-        log_warn "    Could not auto-add tmpfs ${tmpfs_entry} to ${service_label} -- please add it manually to ${compose_file}"
+        log_warn "    Could not auto-add tmpfs ${tmpfs_entry} to ${service_label} — please add it manually to ${compose_file}"
     fi
 }
 
-
 # Fix PermissionManagerActivePreset when set to "custom" on Free edition wikis.
-# Free edition only allows: public, protected, private.
 fix_permission_manager_preset() {
     local db_name="$1"
     local db_user="$2"
@@ -292,17 +268,13 @@ fix_permission_manager_preset() {
 
     if [[ "$current_preset" == "custom" ]]; then
         log_warn "  PermissionManagerActivePreset='custom' is invalid for Free edition — resetting to 'public'"
-        if [[ "$DRY_RUN" != "true" ]]; then
-            if docker exec bluespice-database \
-                mariadb -u"${db_user}" -p"${db_pass}" "${db_name}" \
-                -e "UPDATE bs_settings3 SET s_value='\"public\"' WHERE s_name='PermissionManagerActivePreset';" \
-                2>/dev/null; then
-                log_info "  PermissionManagerActivePreset reset to 'public'"
-            else
-                log_warn "  Could not reset PermissionManagerActivePreset (non-fatal)"
-            fi
+        if docker exec bluespice-database \
+            mariadb -u"${db_user}" -p"${db_pass}" "${db_name}" \
+            -e "UPDATE bs_settings3 SET s_value='\"public\"' WHERE s_name='PermissionManagerActivePreset';" \
+            2>/dev/null; then
+            log_info "  PermissionManagerActivePreset reset to 'public'"
         else
-            log_info "  [DRY RUN] Would reset PermissionManagerActivePreset to 'public'"
+            log_warn "  Could not reset PermissionManagerActivePreset (non-fatal)"
         fi
     else
         log_info "  PermissionManagerActivePreset is OK (${current_preset:-not set})"
@@ -311,7 +283,7 @@ fix_permission_manager_preset() {
 
 # Edit a post-init-settings file, falling back to docker exec if host permissions deny access.
 # Usage: edit_post_init <wiki_name> <host_path> <command> [args...]
-# <command> can be "sed", "append", or "grep-delete"
+# <command> can be "sed" or "append"
 edit_post_init() {
     local wiki_name="$1"
     local host_path="$2"
@@ -321,7 +293,6 @@ edit_post_init() {
 
     case "$cmd" in
         sed)
-            # $1 = sed expression
             if ! sed -i "$1" "$host_path" 2>/dev/null; then
                 local container_name
                 container_name=$(get_container_name "$wiki_name") 2>/dev/null || return 1
@@ -329,8 +300,6 @@ edit_post_init() {
             fi
             ;;
         append)
-            # $1 = text to append
-            # Use subshell so bash's redirect-failure error is also suppressed
             if ! (printf '%s\n' "$1" >> "$host_path") 2>/dev/null; then
                 local container_name
                 container_name=$(get_container_name "$wiki_name") 2>/dev/null || return 1
@@ -352,11 +321,6 @@ update_cache_epoch() {
     local epoch
     epoch=$(date +%Y%m%d%H%M%S)
 
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "  [DRY RUN] Would set wgCacheEpoch=$epoch in $(basename "$post_init_file")"
-        return 0
-    fi
-
     if grep -q 'wgCacheEpoch' "$post_init_file"; then
         edit_post_init "$wiki_name" "$post_init_file" sed "s/\\\$wgCacheEpoch = .*;/\$wgCacheEpoch = \"${epoch}\";/" \
             || log_warn "  Could not update wgCacheEpoch"
@@ -367,20 +331,12 @@ update_cache_epoch() {
     log_info "  Set wgCacheEpoch=$epoch in $(basename "$post_init_file")"
 }
 
-# Enable wire WebSocket URL for existing wikis that had it disabled.
-# Previously we disabled this because the wire container wasn't deployed.
-# Now that we deploy the wire container, we need to remove the override
-# so the built-in $wgServer/_wire URL takes effect.
+# Remove the mwsgWireServiceWebsocketUrl='' override added by earlier installer versions.
 enable_wire_websocket_url() {
     local wiki_name="$1"
     local post_init_file="$2"
 
     if [[ ! -f "$post_init_file" ]]; then
-        return 0
-    fi
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "  [DRY RUN] Would re-enable mwsgWireServiceWebsocketUrl in $(basename "$post_init_file")"
         return 0
     fi
 
@@ -409,20 +365,11 @@ enable_wire_websocket_url() {
 }
 
 # Ensure wgParserCacheType uses memcached in post-init-settings.php.
-# The bluespice/wiki container sets wgParserCacheType = CACHE_NONE by default,
-# forcing a full re-parse on every page view and post-save page load. Since
-# memcached is always configured in these deployments, enabling the parser
-# cache is safe and significantly reduces page load times. Idempotent.
 fix_parser_cache() {
     local wiki_name="$1"
     local post_init_file="$2"
 
     if [[ ! -f "$post_init_file" ]]; then
-        return 0
-    fi
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "  [DRY RUN] Would enable parser cache in $(basename "$post_init_file")"
         return 0
     fi
 
@@ -444,11 +391,139 @@ $GLOBALS['"'"'wgParserCacheType'"'"'] = CACHE_MEMCACHED;'
 }
 
 # ============================================================
+# Extension removal
+# ============================================================
+
+# Remove a named PHP configuration block from post-init-settings.php.
+# Blocks are delimited by `# ===...===` section dividers written by the
+# installer. Tries to edit the host file first; falls back to docker exec.
+remove_post_init_block() {
+    local wiki_name="$1"
+    local host_path="$2"
+    local block_marker="$3"
+
+    if ! grep -q "$block_marker" "$host_path" 2>/dev/null; then
+        return 0
+    fi
+
+    local host_tmp
+    host_tmp="$(mktemp /tmp/bs_rm_block_XXXXXX.py)"
+    cat > "$host_tmp" << 'PYEOF'
+import re, sys
+path, marker = sys.argv[1], sys.argv[2]
+content = open(path).read()
+content = re.sub(
+    r'\n+# =+\n# ' + re.escape(marker) + r'.*?(?=\n+# =+\n# |\Z)',
+    '',
+    content,
+    flags=re.DOTALL
+)
+open(path, 'w').write(content)
+PYEOF
+
+    local removed=false
+    if python3 "$host_tmp" "$host_path" "$block_marker" 2>/dev/null; then
+        removed=true
+    else
+        local container_path="/data/bluespice/post-init-settings.php"
+        local container_tmp="/tmp/bs_rm_block_$$.py"
+        local container_name
+        container_name=$(get_container_name "$wiki_name")
+        if docker ps -q --filter "name=^/${container_name}$" 2>/dev/null | grep -q .; then
+            if docker cp "$host_tmp" "${container_name}:${container_tmp}" 2>/dev/null; then
+                docker exec --user root "$container_name" \
+                    python3 "$container_tmp" "$container_path" "$block_marker" 2>/dev/null \
+                    && removed=true
+                docker exec --user root "$container_name" rm -f "$container_tmp" 2>/dev/null || true
+            fi
+        fi
+    fi
+
+    rm -f "$host_tmp"
+
+    if [[ "$removed" == "true" ]]; then
+        log_info "  Removed ${block_marker} block from post-init-settings.php"
+    else
+        log_warn "  Could not remove ${block_marker} block from post-init-settings.php — remove it manually"
+    fi
+}
+
+remove_gtag() {
+    local wiki_name="$1"
+    local data_dir="$2"
+    local env_file="$3"
+
+    log_info "  Removing Google Analytics (GTag) support..."
+
+    local gtag_dir="${data_dir}/${wiki_name}/extensions/GTag"
+    if [[ -d "$gtag_dir" ]]; then
+        rm -rf "$gtag_dir"
+        log_info "  Removed GTag extension files"
+    fi
+
+    local post_init="${data_dir}/${wiki_name}/post-init-settings.php"
+    remove_post_init_block "$wiki_name" "$post_init" "GTag Extension"
+
+    local config_post_init="${WIKIS_DIR}/${wiki_name}/post-init-settings.php"
+    [[ -f "$config_post_init" ]] && \
+        remove_post_init_block "$wiki_name" "$config_post_init" "GTag Extension"
+
+    if grep -q "^GTAG_ANALYTICS_ID=" "$env_file" 2>/dev/null; then
+        sed -i '/^GTAG_ANALYTICS_ID=/d' "$env_file"
+        log_info "  Removed GTAG_ANALYTICS_ID from .env"
+    fi
+}
+
+remove_oauth() {
+    local wiki_name="$1"
+    local data_dir="$2"
+
+    log_info "  Removing OAuth support..."
+
+    for ext in PluggableAuth OpenIDConnect; do
+        local ext_dir="${data_dir}/${wiki_name}/extensions/${ext}"
+        if [[ -d "$ext_dir" ]]; then
+            rm -rf "$ext_dir"
+            log_info "  Removed ${ext} extension files"
+        fi
+    done
+
+    # OAuth configuration lives in the wiki database (ConfigManager), not in PHP files.
+    log_warn "  OAuth credentials stored in the wiki database are not removed."
+    log_warn "  To fully remove OAuth, disable it via ConfigManager in the wiki admin UI."
+}
+
+remove_semantic() {
+    local wiki_name="$1"
+    local data_dir="$2"
+
+    log_info "  Removing Semantic Web support..."
+
+    for ext in SemanticMediaWiki SemanticExtraSpecialProperties; do
+        local ext_dir="${data_dir}/${wiki_name}/extensions/${ext}"
+        if [[ -d "$ext_dir" ]]; then
+            rm -rf "$ext_dir"
+            log_info "  Removed ${ext} extension files"
+        fi
+    done
+
+    local post_init="${data_dir}/${wiki_name}/post-init-settings.php"
+    remove_post_init_block "$wiki_name" "$post_init" "SemanticMediaWiki"
+
+    local config_post_init="${WIKIS_DIR}/${wiki_name}/post-init-settings.php"
+    [[ -f "$config_post_init" ]] && \
+        remove_post_init_block "$wiki_name" "$config_post_init" "SemanticMediaWiki"
+}
+
+# ============================================================
 # Wiki upgrade
 # ============================================================
 upgrade_wiki() {
     local wiki_name="$1"
-    local target_version="$2"
+    local want_gtag="$2"
+    local want_oauth="$3"
+    local want_semantic="$4"
+    local target_version="$5"
 
     local wiki_dir="${WIKIS_DIR}/${wiki_name}"
     local compose_file="${wiki_dir}/docker-compose.main.yml"
@@ -468,7 +543,6 @@ upgrade_wiki() {
         return 1
     fi
 
-    # Read wiki settings from its own .env (not shared env)
     local current_version edition data_dir db_name db_user db_pass
     current_version=$(read_env_var "$env_file" "VERSION")
     edition=$(read_env_var "$env_file" "EDITION")
@@ -480,69 +554,32 @@ upgrade_wiki() {
     log_info "  Current version : ${current_version:-unknown}"
     log_info "  Target version  : $target_version"
     log_info "  Edition         : ${edition:-unknown}"
-    log_info "  Data dir        : ${data_dir:-unknown}"
 
-    # Check extension presence on HOST VOLUME before any version check or container recreation.
-    # We cannot rely on the container's /app path because it is ephemeral.
-    local had_oauth=false
-    local had_gtag=false
-    local had_semantic=false
-    local oauth_host_path="${data_dir}/${wiki_name}/extensions/PluggableAuth/extension.json"
-    local gtag_host_path="${data_dir}/${wiki_name}/extensions/GTag/extension.json"
-    local smw_host_path="${data_dir}/${wiki_name}/extensions/SemanticMediaWiki/extension.json"
-    [[ -f "$oauth_host_path" ]] && had_oauth=true
-    [[ -f "$gtag_host_path"  ]] && had_gtag=true
-    [[ -f "$smw_host_path"   ]] && had_semantic=true
+    # Check extension presence on HOST VOLUME before any container changes.
+    local had_oauth=false had_gtag=false had_semantic=false
+    [[ -f "${data_dir}/${wiki_name}/extensions/PluggableAuth/extension.json"    ]] && had_oauth=true
+    [[ -f "${data_dir}/${wiki_name}/extensions/GTag/extension.json"             ]] && had_gtag=true
+    [[ -f "${data_dir}/${wiki_name}/extensions/SemanticMediaWiki/extension.json" ]] && had_semantic=true
 
-    # Skip if already on target version (unless --force).
-    # Exception: if SMW is installed, always run setupStore.php — it is idempotent and is
-    # required after a server migration where the DB is fresh (SMW tables never created).
-    if [[ "$current_version" == "$target_version" ]] && [[ "$FORCE" != "true" ]]; then
-        log_info "  Already on $target_version — skipping version upgrade (use --force to override)"
-        if [[ "$had_semantic" == "true" ]]; then
-            log_info "  SMW detected — running setupStore.php to ensure upgrade key is valid..."
-            run_smw_update "$wiki_name"
+    log_info "  GTag     : currently=${had_gtag}     → requested=${want_gtag}"
+    log_info "  OAuth    : currently=${had_oauth}    → requested=${want_oauth}"
+    log_info "  Semantic : currently=${had_semantic} → requested=${want_semantic}"
+
+    if [[ "$current_version" == "$target_version" ]]; then
+        log_warn "  Wiki is already on $target_version."
+        local confirm
+        printf "  Proceed anyway? [y/N]: "
+        read -r confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            log_info "  Skipping $wiki_name"
+            return 0
         fi
-        return 0
     fi
 
-    # Log extension presence now that we've decided to proceed with the upgrade.
-    if [[ "$had_oauth" == "true" ]]; then
-        log_info "  OAuth extensions present on host — will reinstall after upgrade"
-    else
-        log_info "  OAuth extensions not found on host — will skip reinstall"
-    fi
-    if [[ "$had_gtag" == "true" ]]; then
-        log_info "  GTag extension present on host — will reinstall after upgrade"
-    else
-        log_info "  GTag extension not found on host — will offer to install"
-    fi
-    if [[ "$had_semantic" == "true" ]]; then
-        log_info "  Semantic extensions present on host — will reinstall after upgrade"
-    else
-        log_info "  Semantic extensions not found on host — will skip"
-    fi
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "  [DRY RUN] Steps that would execute:"
-        log_info "    1.  Verify/add required env vars in compose file"
-        log_info "    1b. Verify/generate INTERNAL_WIKI_* secrets"
-        log_info "    1c. Verify/add tmpfs mounts in compose file"
-        log_info "    2.  docker pull bluespice/wiki:${target_version}"
-        log_info "    3.  Update .env (VERSION, BLUESPICE_WIKI_IMAGE)"
-        log_info "    4.  Create preupdate/postupdate log directories"
-        log_info "    5.  docker compose up -d --force-recreate"
-        log_info "    6.  Wait for container + fix log dir ownership"
-        log_info "    7.  php maintenance/run.php update --quick"
-        [[ "$had_oauth"    == "true" ]] && log_info "    8.  install_auth_extensions"
-        [[ "$had_semantic" == "true" ]] && log_info "    8b. install_semantic_extensions"
-        log_info "    9.  Update wgCacheEpoch in post-init-settings.php"
-        log_info "    10. Disable mwsgWireServiceWebsocketUrl in post-init-settings.php"
-        log_info "    11. Enable parser cache (CACHE_MEMCACHED) in post-init-settings.php"
-        [[ "$edition" == "free" ]] && log_info "    10. Check/fix PermissionManagerActivePreset"
-        log_info "    13. Rebuild search index"
-        return 0
-    fi
+    # --- Remove extensions BEFORE container recreation ---
+    [[ "$had_gtag"     == "true" && "$want_gtag"     == "false" ]] && remove_gtag     "$wiki_name" "$data_dir" "$env_file"
+    [[ "$had_oauth"    == "true" && "$want_oauth"    == "false" ]] && remove_oauth    "$wiki_name" "$data_dir"
+    [[ "$had_semantic" == "true" && "$want_semantic" == "false" ]] && remove_semantic "$wiki_name" "$data_dir"
 
     # --- Step 1: Ensure compose file has all required env vars ---
     log_info "  Verifying compose file env vars..."
@@ -553,22 +590,9 @@ upgrade_wiki() {
     ensure_compose_env_var "$compose_file" "CACHE_HOST"                   "bluespice-cache"
     ensure_compose_env_var "$compose_file" "CACHE_PORT"                   "11211"
     ensure_compose_env_var "$compose_file" "DB_TYPE"                      "mysql"
-    ensure_compose_env_var "$compose_file" "INTERNAL_WIRE_API_KEY"         "\${INTERNAL_WIRE_API_KEY}"
+    ensure_compose_env_var "$compose_file" "INTERNAL_WIRE_API_KEY"        "\${INTERNAL_WIRE_API_KEY}"
 
-    # --- Step 1c: Ensure extension volume mounts exist ---
-    log_info "  Verifying extension volume mounts..."
-    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/PluggableAuth" "/app/bluespice/w/extensions/PluggableAuth"
-    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/OpenIDConnect" "/app/bluespice/w/extensions/OpenIDConnect"
-    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/GTag"          "/app/bluespice/w/extensions/GTag"
-    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/SemanticMediaWiki"                "/app/bluespice/w/extensions/SemanticMediaWiki"
-    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/SemanticExtraSpecialProperties"  "/app/bluespice/w/extensions/SemanticExtraSpecialProperties"
-
-    # --- Step 1d: Ensure tmpfs mounts are configured ---
-    log_info "  Verifying tmpfs mounts..."
-    ensure_compose_tmpfs "$compose_file" "/tmp/wiki:uid=1002,gid=1002" "wiki-web"
-    ensure_compose_tmpfs "$compose_file" "/tmp/wiki:uid=1002,gid=1002" "wiki-task"
-
-    # --- Step 1b: Ensure INTERNAL_WIKI_* secrets exist (required by 5.2.x) ---
+    # --- Step 1b: Ensure INTERNAL_WIKI_* secrets exist ---
     log_info "  Verifying INTERNAL_WIKI_* secrets..."
     for secret_var in INTERNAL_WIKI_SECRETKEY INTERNAL_WIKI_UPGRADEKEY INTERNAL_WIKI_TOKEN_AUTH_SALT INTERNAL_WIRE_API_KEY; do
         existing=$(read_env_var "$env_file" "$secret_var")
@@ -579,6 +603,19 @@ upgrade_wiki() {
         fi
         ensure_compose_env_var "$compose_file" "$secret_var" "\${${secret_var}}"
     done
+
+    # --- Step 1c: Ensure extension volume mounts exist ---
+    log_info "  Verifying extension volume mounts..."
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/PluggableAuth"             "/app/bluespice/w/extensions/PluggableAuth"
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/OpenIDConnect"             "/app/bluespice/w/extensions/OpenIDConnect"
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/GTag"                     "/app/bluespice/w/extensions/GTag"
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/SemanticMediaWiki"             "/app/bluespice/w/extensions/SemanticMediaWiki"
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/SemanticExtraSpecialProperties" "/app/bluespice/w/extensions/SemanticExtraSpecialProperties"
+
+    # --- Step 1d: Ensure tmpfs mounts ---
+    log_info "  Verifying tmpfs mounts..."
+    ensure_compose_tmpfs "$compose_file" "/tmp/wiki:uid=1002,gid=1002" "wiki-web"
+    ensure_compose_tmpfs "$compose_file" "/tmp/wiki:uid=1002,gid=1002" "wiki-task"
 
     # --- Step 2: Pull new image ---
     log_info "  Pulling bluespice/wiki:${target_version}..."
@@ -592,14 +629,12 @@ upgrade_wiki() {
     cp "$env_file" "${BACKUP_DIR}/${wiki_name}.env.bak"
     sed -i "s/^VERSION=.*/VERSION=${target_version}/" "$env_file"
     sed -i "s|^BLUESPICE_WIKI_IMAGE=.*|BLUESPICE_WIKI_IMAGE=bluespice/wiki:${target_version}|" "$env_file"
-    # Ensure DB_TYPE, CACHE_HOST, CACHE_PORT are present in .env
-    grep -q "^DB_TYPE=" "$env_file"    || echo "DB_TYPE=mysql"              >> "$env_file"
+    grep -q "^DB_TYPE="    "$env_file" || echo "DB_TYPE=mysql"              >> "$env_file"
     grep -q "^CACHE_HOST=" "$env_file" || echo "CACHE_HOST=bluespice-cache" >> "$env_file"
     grep -q "^CACHE_PORT=" "$env_file" || echo "CACHE_PORT=11211"           >> "$env_file"
     log_info "  Updated .env to version $target_version"
 
-    # --- Step 4: Pre-create run-updates log directories ---
-    # If these don't exist before the container starts, run-updates fails trying to write logs.
+    # --- Step 4: Pre-create log directories ---
     local log_base="${data_dir}/${wiki_name}/logs"
     mkdir -p "${log_base}/preupdate" "${log_base}/postupdate" 2>/dev/null || true
     log_info "  Ensured preupdate/postupdate log directories exist"
@@ -621,22 +656,15 @@ upgrade_wiki() {
         log_error "  Container did not become ready within 120s for $wiki_name"
         return 1
     fi
-    # Fix ownership so run-updates can write to the log directories
     docker exec --user root "$container_name" \
         chown 1002:bluespice \
         /data/bluespice/logs/preupdate \
         /data/bluespice/logs/postupdate 2>/dev/null || true
-    # Ensure settings files are group-writable (664) so the host upgrade
-    # script (running as a bluespice group member) can modify them.
     docker exec "$container_name" chmod 664 \
         /data/bluespice/pre-init-settings.php \
         /data/bluespice/post-init-settings.php 2>/dev/null || true
 
     # --- Step 7a: Clean up broken ContentProvisioner blob data ---
-    # After a version upgrade the ContentProvisioner re-runs and may encounter orphaned
-    # blob references left from a previous partial run (e.g. Template:CircledNumber with
-    # a <templatestyles> subpage that wasn't created yet). Delete the stale data and
-    # reset the ContentProvisioner updatelog entry so it runs cleanly.
     log_info "  Cleaning up broken ContentProvisioner data before update..."
     if [[ -n "$db_name" && -n "$db_user" && -n "$db_pass" ]]; then
         docker exec bluespice-database mariadb -u "$db_user" -p"$db_pass" "$db_name" -e "
@@ -671,32 +699,32 @@ upgrade_wiki() {
         log_warn "  update.php exited non-zero (may be non-fatal — continuing)"
     fi
 
-    # --- Step 8: Reinstall OAuth extensions if previously present ---
-    if [[ "$had_oauth" == "true" ]]; then
-        log_info "  Reinstalling OAuth extensions..."
+    # --- Step 8: Install / reinstall extensions ---
+    local post_init_file="${data_dir}/${wiki_name}/post-init-settings.php"
+    local config_post_init_file="${WIKIS_DIR}/${wiki_name}/post-init-settings.php"
+
+    # OAuth
+    if [[ "$want_oauth" == "true" ]]; then
+        log_info "  Installing/reinstalling OAuth extensions..."
         if install_auth_extensions "$wiki_name"; then
-            log_info "  OAuth extensions reinstalled successfully"
+            log_info "  OAuth extensions installed successfully"
         else
-            log_warn "  OAuth extension reinstall failed — wiki is functional but OAuth login may not work"
+            log_warn "  OAuth extension install failed — OAuth login may not work"
         fi
     fi
 
-    # --- Step 8b: Install or reinstall GTag extension ---
-    local post_init_file="${data_dir}/${wiki_name}/post-init-settings.php"
-    local config_post_init_file="${WIKIS_DIR}/${wiki_name}/post-init-settings.php"
-    if [[ "$had_gtag" == "true" ]]; then
-        log_info "  Reinstalling GTag extension..."
+    # GTag
+    if [[ "$want_gtag" == "true" ]]; then
+        log_info "  Installing/reinstalling GTag extension..."
         if install_gtag_extension "$wiki_name"; then
-            log_info "  GTag extension reinstalled successfully"
+            log_info "  GTag extension files installed"
         else
-            log_warn "  GTag extension reinstall failed — Google Analytics tracking may not work"
+            log_warn "  GTag extension install failed — Google Analytics may not work"
         fi
 
-        # Ensure .env has the analytics ID; prompt if it was never persisted
         local current_gtag_id
         current_gtag_id=$(read_env_var "$env_file" "GTAG_ANALYTICS_ID")
         if [[ -z "$current_gtag_id" ]]; then
-            log_info "  GTag analytics ID not found in .env — prompting for ID..."
             prompt_gtag_analytics_id
             current_gtag_id="$GTAG_ANALYTICS_ID"
             grep -q "^GTAG_ANALYTICS_ID=" "$env_file" \
@@ -705,73 +733,29 @@ upgrade_wiki() {
             log_info "  Saved GTag analytics ID to .env"
         fi
 
-        # Ensure post-init-settings.php has the GTag config block (idempotent — skips if present)
         if add_gtag_to_post_init_settings "$post_init_file" "$current_gtag_id"; then
             log_info "  GTag configuration verified in post-init-settings.php"
         else
             log_warn "  Could not update GTag configuration in post-init-settings.php"
         fi
-        # Keep config-managed copy in sync so copy_config_files_to_container doesn't stomp it
         [[ -f "$config_post_init_file" ]] && \
             add_gtag_to_post_init_settings "$config_post_init_file" "$current_gtag_id" 2>/dev/null || true
-    else
-        echo ""
-        echo "  Wiki: ${wiki_name}"
-        printf "  Install Google Analytics (GTag) extension for this wiki? [y/N]: "
-        read -r install_gtag_answer
-        if [[ "$install_gtag_answer" =~ ^[Yy]$ ]]; then
-            log_info "  Installing GTag extension for ${wiki_name}..."
-            if setup_gtag_extension "$wiki_name" "$post_init_file"; then
-                log_info "  GTag extension installed and configured successfully"
-                # Persist analytics ID to .env so future upgrades don't lose it
-                grep -q "^GTAG_ANALYTICS_ID=" "$env_file" \
-                    && sed -i "s/^GTAG_ANALYTICS_ID=.*/GTAG_ANALYTICS_ID=${GTAG_ANALYTICS_ID}/" "$env_file" \
-                    || echo "GTAG_ANALYTICS_ID=${GTAG_ANALYTICS_ID}" >> "$env_file"
-                log_info "  Saved GTag analytics ID to .env"
-                # Keep config-managed copy in sync
-                [[ -f "$config_post_init_file" ]] && \
-                    add_gtag_to_post_init_settings "$config_post_init_file" "$GTAG_ANALYTICS_ID" 2>/dev/null || true
-            else
-                log_warn "  GTag extension setup failed — you can install it manually later"
-            fi
-        else
-            log_info "  Skipping GTag extension for ${wiki_name}"
-        fi
     fi
 
-    # --- Step 8c: Reinstall or install Semantic extensions ---
-    # Pass $post_init_file (the data-volume path) so the wfLoadExtension block is
-    # written to the live copy that the container reads, not the config-dir copy.
-    local wiki_dir_local="${WIKIS_DIR}/${wiki_name}"
-    if [[ "$had_semantic" == "true" ]]; then
-        log_info "  Reinstalling Semantic extensions..."
-        if setup_semantic_extensions "$wiki_name" "$wiki_dir_local" "$post_init_file"; then
-            log_info "  Semantic extensions reinstalled successfully"
+    # Semantic
+    if [[ "$want_semantic" == "true" ]]; then
+        log_info "  Installing/reinstalling Semantic extensions..."
+        if setup_semantic_extensions "$wiki_name" "$wiki_dir" "$post_init_file"; then
+            log_info "  Semantic extensions installed successfully"
         else
-            log_warn "  Semantic extension reinstall failed — SemanticMediaWiki may not work"
-        fi
-    else
-        echo ""
-        echo "  Wiki: ${wiki_name}"
-        printf "  Install SemanticMediaWiki and SemanticExtraSpecialProperties extensions? [y/N]: "
-        read -r install_smw_answer
-        if [[ "$install_smw_answer" =~ ^[Yy]$ ]]; then
-            log_info "  Installing Semantic extensions for ${wiki_name}..."
-            if setup_semantic_extensions "$wiki_name" "$wiki_dir_local" "$post_init_file"; then
-                log_info "  Semantic extensions installed and configured successfully"
-            else
-                log_warn "  Semantic extension setup failed — you can install it manually later"
-            fi
-        else
-            log_info "  Skipping Semantic extensions for ${wiki_name}"
+            log_warn "  Semantic extension setup failed — SemanticMediaWiki may not work"
         fi
     fi
 
     # --- Step 9: Bump wgCacheEpoch ---
     update_cache_epoch "$wiki_name" "$post_init_file"
-    # --- Step 10: Enable wire WebSocket URL (wire container now deployed) ---
+    # --- Step 10: Enable wire WebSocket URL ---
     enable_wire_websocket_url "$wiki_name" "$post_init_file"
-
     # --- Step 11: Enable parser cache ---
     fix_parser_cache "$wiki_name" "$post_init_file"
 
@@ -781,9 +765,6 @@ upgrade_wiki() {
     fi
 
     # --- Step 13: Rebuild search index ---
-    # New BlueSpice versions may add index fields (e.g. suggestions-spellcheck) that
-    # require a full rebuild to create the updated mapping. Without this, searches
-    # throw BadRequest400Exception and show "Query cannot be executed" in the UI.
     log_info "  Rebuilding search index with updated mappings..."
     local rebuild_output rebuild_ok=false
     if rebuild_output=$(docker exec "$container_name" /app/bin/rebuild-searchindex --main 2>&1); then
@@ -817,11 +798,6 @@ upgrade_shared_services() {
         return 0
     fi
 
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "  [DRY RUN] Would update $shared_env VERSION=$target_version and restart services"
-        return 0
-    fi
-
     mkdir -p "$BACKUP_DIR"
     cp "$shared_env" "${BACKUP_DIR}/shared.env.bak"
     sed -i "s/^VERSION=.*/VERSION=${target_version}/" "$shared_env"
@@ -829,7 +805,6 @@ upgrade_shared_services() {
 
     cd "$SHARED_DIR" || return 1
 
-    # Ensure VERSION and BLUESPICE_SERVICE_REPOSITORY are available to docker compose
     export VERSION="$target_version"
     export BLUESPICE_SERVICE_REPOSITORY="${BLUESPICE_SERVICE_REPOSITORY:-bluespice}"
 
@@ -841,7 +816,6 @@ upgrade_shared_services() {
         log_warn "  Persistent data services restart had errors (non-fatal if already running)"
     fi
 
-    # Brief pause for DB to stabilise before restarting stateless services
     sleep 5
 
     log_info "  Restarting stateless and proxy services..."
@@ -860,83 +834,70 @@ upgrade_shared_services() {
 # Main
 # ============================================================
 main() {
-    # Auto-detect target version if not specified
-    if [[ -z "$TARGET_VERSION" ]]; then
-        log_info "No --version specified. Detecting latest BlueSpice version from Docker Hub..."
-        if ! TARGET_VERSION=$(detect_latest_version); then
-            log_error "Could not detect latest version. Please specify with --version VERSION"
-            exit 1
-        fi
-        log_info "Detected latest BlueSpice version: $TARGET_VERSION"
-    fi
-
     log_info ""
     log_info "═══════════════════════════════════════════════════"
-    log_info "BlueSpice Upgrade  →  $TARGET_VERSION"
-    [[ "$DRY_RUN" == "true" ]] && log_info "Mode: DRY RUN (no changes will be made)"
-    [[ "$FORCE"   == "true" ]] && log_info "Mode: FORCE (will re-upgrade wikis already on target)"
-    [[ -n "$SPECIFIC_WIKI" ]] && log_info "Scope: wiki '$SPECIFIC_WIKI' only"
-    log_info "Backups: $BACKUP_DIR"
+    log_info "BlueSpice Upgrade"
     log_info "═══════════════════════════════════════════════════"
 
-    # Upgrade shared services before wikis (DB must be up for update.php)
-    if [[ "$SKIP_SHARED" != "true" ]]; then
-        upgrade_shared_services "$TARGET_VERSION"
-    else
-        log_info "Skipping shared services (--skip-shared)"
+    log_info "Detecting latest BlueSpice version from Docker Hub..."
+    local target_version
+    if ! target_version=$(detect_latest_version); then
+        log_error "Could not detect latest version from Docker Hub"
+        exit 1
     fi
+    log_info "Latest version: $target_version"
 
-    # Build wiki list
-    local wiki_list=()
-    if [[ -n "$SPECIFIC_WIKI" ]]; then
-        wiki_list=("$SPECIFIC_WIKI")
-    else
-        for wiki_dir in "${WIKIS_DIR}"/*/; do
-            if [[ -d "$wiki_dir" ]] && [[ -f "${wiki_dir}/.env" ]]; then
-                wiki_list+=("$(basename "$wiki_dir")")
-            fi
-        done
-    fi
+    echo ""
+    echo "What would you like to upgrade?"
+    echo "  1) Shared services (database, cache, proxy)"
+    echo "  2) A wiki"
+    echo ""
+    local upgrade_type
+    while true; do
+        printf "Choice [1/2]: "
+        read -r upgrade_type
+        case "$upgrade_type" in
+            1|2) break ;;
+            *) echo "Please enter 1 or 2." >&2 ;;
+        esac
+    done
 
-    if [[ ${#wiki_list[@]} -eq 0 ]]; then
-        log_warn "No wikis found in $WIKIS_DIR"
+    if [[ "$upgrade_type" == "1" ]]; then
+        upgrade_shared_services "$target_version"
+        log_info ""
+        log_info "Shared services upgrade complete."
+        log_info "Backups: $BACKUP_DIR"
         exit 0
     fi
 
-    log_info ""
-    log_info "Found ${#wiki_list[@]} wiki(s): ${wiki_list[*]}"
+    # Wiki upgrade
+    local wiki_name
+    wiki_name=$(select_wiki)
 
-    local success_count=0
-    local fail_count=0
-    local failed_wikis=()
+    echo ""
+    local want_gtag want_oauth want_semantic
+    want_gtag=$(    ask_yes_no "Install Google Analytics (GTag) support?")
+    want_oauth=$(   ask_yes_no "Install OAuth (Google login) support?")
+    want_semantic=$(ask_yes_no "Install Semantic Web (SemanticMediaWiki + SESP) support?")
 
-    for wiki_name in "${wiki_list[@]}"; do
-        if upgrade_wiki "$wiki_name" "$TARGET_VERSION"; then
-            success_count=$((success_count + 1))
-        else
-            fail_count=$((fail_count + 1))
-            failed_wikis+=("$wiki_name")
-        fi
-    done
-
-    # Update the canonical version file if any wikis succeeded
-    if [[ $success_count -gt 0 && "$DRY_RUN" != "true" ]]; then
-        echo "$TARGET_VERSION" > "${SCRIPT_DIR}/BLUESPICE_VERSION"
-        log_info "Updated BLUESPICE_VERSION to $TARGET_VERSION"
-    fi
-
-    log_info ""
+    echo ""
     log_info "═══════════════════════════════════════════════════"
-    log_info "Upgrade Summary"
-    log_info "  Succeeded : $success_count"
-    if [[ $fail_count -gt 0 ]]; then
-        log_error "  Failed    : $fail_count  (${failed_wikis[*]})"
-        log_info  "  Restore   : cp ${BACKUP_DIR}/WIKI_NAME.env.bak ${WIKIS_DIR}/WIKI_NAME/.env"
-    fi
-    log_info "  Backups   : $BACKUP_DIR"
+    log_info "Upgrading wiki   : $wiki_name"
+    log_info "Target version   : $target_version"
+    log_info "Google Analytics : $want_gtag"
+    log_info "OAuth support    : $want_oauth"
+    log_info "Semantic Web     : $want_semantic"
+    log_info "Backups          : $BACKUP_DIR"
     log_info "═══════════════════════════════════════════════════"
 
-    if [[ $fail_count -gt 0 ]]; then
+    if upgrade_wiki "$wiki_name" "$want_gtag" "$want_oauth" "$want_semantic" "$target_version"; then
+        echo "$target_version" > "${SCRIPT_DIR}/BLUESPICE_VERSION"
+        log_info ""
+        log_info "Upgrade complete. $wiki_name is now on $target_version."
+        log_info "Backups: $BACKUP_DIR"
+    else
+        log_error "Upgrade failed. Restore .env with:"
+        log_error "  cp ${BACKUP_DIR}/${wiki_name}.env.bak ${WIKIS_DIR}/${wiki_name}/.env"
         exit 1
     fi
 }

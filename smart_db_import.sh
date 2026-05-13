@@ -11,18 +11,6 @@ source "${SCRIPT_DIR}/lib/logging.sh"
 
 set -euo pipefail
 
-# Color codes for output
-# shellcheck disable=SC2034  # Colors may be used by sourced logging functions
-readonly RED='\033[0;31m'
-# shellcheck disable=SC2034
-readonly GREEN='\033[0;32m'
-# shellcheck disable=SC2034
-readonly YELLOW='\033[1;33m'
-# shellcheck disable=SC2034
-readonly BLUE='\033[0;34m'
-# shellcheck disable=SC2034
-readonly NC='\033[0m' # No Color
-
 # Configuration
 CONFIG_FILE=""
 DB_HOST=""
@@ -30,10 +18,6 @@ DB_NAME=""
 DB_USER=""
 DB_PASS=""
 CONTAINER_NAME=""
-
-# Print functions
-
-
 
 
 
