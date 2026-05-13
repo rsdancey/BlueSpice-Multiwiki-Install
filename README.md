@@ -77,6 +77,9 @@ The interactive wizard prompts for:
 - Domain name (e.g. `mywiki.example.com`)
 - Language
 - SMTP settings for outbound email
+- Whether to install **OAuth / Google login** (PluggableAuth + OpenIDConnect extensions)
+- Whether to install **Google Analytics** (GTag extension; prompts for your tracking ID if yes)
+- Whether to install **Semantic Web** support (SemanticMediaWiki + SESP extensions)
 - SSL preference
 - Optional: restore from a database backup and/or image archive
 
