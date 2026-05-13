@@ -7,13 +7,18 @@ This guide covers upgrading your BlueSpice multi-wiki installation using the `up
 ## Quick Reference
 
 ```bash
-./upgrade-bluespice                        # auto-detect latest version, upgrade all wikis
-./upgrade-bluespice --version 5.2.2        # upgrade all wikis to a specific version
-./upgrade-bluespice --wiki mywiki          # upgrade only one wiki
-./upgrade-bluespice --dry-run              # preview what would happen, no changes
-./upgrade-bluespice --force                # re-run upgrade even if already on target version
-./upgrade-bluespice --skip-shared          # skip shared services, upgrade wikis only
+./upgrade-bluespice
 ```
+
+The script is fully interactive. It will:
+
+1. Auto-detect the latest BlueSpice version from Docker Hub
+2. Ask whether to upgrade **shared services** or a **single wiki**
+3. For a wiki upgrade: list available wikis, then ask whether to install or remove each optional extension:
+   - Google Analytics (GTag)
+   - OAuth / Google login (PluggableAuth + OpenIDConnect)
+   - Semantic Web (SemanticMediaWiki + SESP)
+4. Perform the upgrade, installing or actively removing each extension as requested
 
 ---
 
@@ -41,7 +46,7 @@ The upgrade script automatically backs up each wiki's `.env` file to `/tmp/blues
 
 ## Upgrade Process (what the script does)
 
-For each wiki, `upgrade-bluespice` runs the following steps in order:
+For the selected wiki, `upgrade-bluespice` runs the following steps in order:
 
 ### 1. Verify compose file env vars
 Ensures these variables are present in the wiki's `docker-compose.main.yml`:
@@ -91,11 +96,22 @@ php /app/bluespice/w/maintenance/run.php update --quick
 
 Applies any database schema changes required by the new version.
 
-### 8. Reinstall OAuth extensions
-If OAuth extensions (PluggableAuth, OpenIDConnect) were present on the host volume before the upgrade, they are reinstalled. This is necessary because:
-- `/app` is wiped on container recreate
-- The startup wrapper scripts restore extensions from `/data/bluespice/extensions/` on each start
-- After an upgrade, a fresh reinstall ensures the extension version matches the new BlueSpice version
+### 0 (pre-upgrade). Remove unwanted extensions
+If the user answered **no** to an extension that is currently installed, its files are removed from the host volume and its configuration block is removed from `post-init-settings.php` **before** the container is recreated. This ensures the new container starts clean without loading the removed extension.
+
+Extensions removed this way:
+- **GTag**: deletes `/bluespice/WIKI_NAME/extensions/GTag/`, removes the GTag config block from `post-init-settings.php`, and removes `GTAG_ANALYTICS_ID` from `.env`
+- **OAuth**: deletes `/bluespice/WIKI_NAME/extensions/PluggableAuth/` and `OpenIDConnect/` (OAuth credentials stored in the database are not touched — disable OAuth via ConfigManager if needed)
+- **Semantic**: deletes `/bluespice/WIKI_NAME/extensions/SemanticMediaWiki/` and `SemanticExtraSpecialProperties/`, removes the SMW config block from `post-init-settings.php`
+
+### 8. Install / reinstall extensions
+After `update.php` completes, extensions the user answered **yes** to are installed (or reinstalled if already present). All install functions are idempotent.
+
+| Extension | Action |
+|---|---|
+| **OAuth** | Downloads and installs PluggableAuth + OpenIDConnect; runs Composer for OpenIDConnect dependencies |
+| **GTag** | Downloads and installs the GTag extension; prompts for the analytics ID if not already in `.env`; writes the config block to `post-init-settings.php` |
+| **Semantic** | Downloads SemanticMediaWiki + SESP via Composer; runs `update.php` and `setupStore.php`; writes the SMW/SESP config block to `post-init-settings.php`; rebuilds semantic data |
 
 ### 9. Bump wgCacheEpoch
 Updates the `$wgCacheEpoch` timestamp in `post-init-settings.php` to bust stale browser and server caches.
@@ -116,57 +132,35 @@ This is required when a new BlueSpice version adds index fields (e.g. `suggestio
 
 ## Shared Services Upgrade
 
-Unless `--skip-shared` is specified, the script also upgrades the shared services (MariaDB, OpenSearch, Memcached, Nginx) by:
-1. Updating `VERSION` in `/core/core_install/shared/.shared.env`
-2. Restarting `docker-compose.persistent-data-services.yml`
-3. Restarting `docker-compose.stateless-services.yml` + `docker-compose.proxy.yml` + `docker-compose.proxy-letsencrypt.yml`
+When you select **shared services** at the prompt, the script:
 
-Shared services are upgraded **before** wikis so the database is running when `update.php` executes.
+1. Updates `VERSION` in `/core/core_install/shared/.shared.env`
+2. Restarts `docker-compose.persistent-data-services.yml`
+3. Restarts `docker-compose.stateless-services.yml` + `docker-compose.proxy.yml` + `docker-compose.proxy-letsencrypt.yml`
 
----
-
-## All Options
-
-```
--v, --version VERSION   Target version (default: auto-detect from Docker Hub)
--f, --force             Re-run upgrade even if already on target version
--w, --wiki WIKI_NAME    Upgrade only the named wiki (default: all)
--s, --skip-shared       Skip shared services upgrade
--n, --dry-run           Show what would be done without making changes
--h, --help              Show help
-```
+Always upgrade shared services before upgrading any wiki, so the database is running when `update.php` executes.
 
 ---
 
-## Examples
+## Standard Workflow
 
-### Standard upgrade (auto-detect latest)
+### Upgrade shared services first, then each wiki
 
 ```bash
+# Run once to upgrade shared infrastructure
 ./upgrade-bluespice
+# → choose: 1) Shared services
+
+# Run once per wiki
+./upgrade-bluespice
+# → choose: 2) A wiki
+# → select the wiki by number
+# → answer y/n for GTag, OAuth, Semantic Web
 ```
 
-### Upgrade a single wiki first, then the rest
+### Re-run if the wiki is already on the target version
 
-```bash
-# Upgrade shared services + one wiki as a canary
-./upgrade-bluespice --version 5.2.3 --wiki mywiki
-
-# If that looks good, upgrade the rest (shared services already done)
-./upgrade-bluespice --version 5.2.3 --skip-shared
-```
-
-### Retry a failed upgrade
-
-```bash
-./upgrade-bluespice --version 5.2.2 --wiki mywiki --force
-```
-
-### Preview without changes
-
-```bash
-./upgrade-bluespice --version 5.2.3 --dry-run
-```
+The script will warn you and ask for confirmation before proceeding. Answer `y` to continue.
 
 ---
 
@@ -211,7 +205,7 @@ docker exec -i bluespice-database \
 2. The `docker-compose.main.yml` passes it via the environment section
 3. The startup wrapper scripts at `/opt/bluespice/scripts/` call `init-envs` before restoring OAuth extensions
 
-Run `upgrade-bluespice --force` to regenerate missing secrets and re-run all steps.
+Re-run `./upgrade-bluespice`, select the affected wiki, and answer `y` when asked whether to proceed despite already being on the target version. This regenerates missing secrets and re-runs all upgrade steps.
 
 ### Search returns "Query cannot be executed"
 
@@ -238,13 +232,9 @@ docker exec --user root bluespice-WIKI_NAME-wiki-web \
 
 ### OAuth login broken after upgrade
 
-The startup wrapper scripts restore OAuth extensions from `/bluespice/WIKI_NAME/extensions/`. If the host volume copy is missing or outdated, reinstall:
+The startup wrapper scripts restore OAuth extensions from `/bluespice/WIKI_NAME/extensions/`. If the host volume copy is missing or outdated, re-run `./upgrade-bluespice`, select the affected wiki, answer `y` to OAuth, and `y` when asked whether to proceed despite already being on the target version.
 
-```bash
-./upgrade-bluespice --version 5.2.2 --wiki WIKI_NAME --force
-```
-
-Or reinstall manually by running `initialize-wiki` in restore mode, or by calling `install_auth_extensions` from the `oauth-config.sh` library.
+Alternatively, reinstall manually by calling `install_auth_extensions` from the `oauth-config.sh` library.
 
 ### Check what version is actually running
 
