@@ -65,7 +65,7 @@ ask_yes_no() {
     local prompt="$1"
     local answer
     while true; do
-        printf "%s [y/n]: " "$prompt"
+        printf "%s [y/n]: " "$prompt" >&2
         read -r answer
         case "$answer" in
             [Yy]) echo "true";  return 0 ;;
@@ -90,18 +90,18 @@ select_wiki() {
         exit 1
     fi
 
-    echo ""
-    echo "Available wikis:"
+    echo "" >&2
+    echo "Available wikis:" >&2
     local i=1
     for w in "${wikis[@]}"; do
-        echo "  $i) $w"
+        echo "  $i) $w" >&2
         i=$((i + 1))
     done
-    echo ""
+    echo "" >&2
 
     local choice
     while true; do
-        printf "Select wiki (1-%d): " "${#wikis[@]}"
+        printf "Select wiki (1-%d): " "${#wikis[@]}" >&2
         read -r choice
         if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#wikis[@]} )); then
             echo "${wikis[$((choice - 1))]}"
@@ -457,8 +457,12 @@ remove_gtag() {
 
     local gtag_dir="${data_dir}/${wiki_name}/extensions/GTag"
     if [[ -d "$gtag_dir" ]]; then
-        rm -rf "$gtag_dir"
-        log_info "  Removed GTag extension files"
+        if docker_exec_safe "$wiki_name" "rm -rf /data/bluespice/extensions/GTag" 2>/dev/null \
+                || rm -rf "$gtag_dir" 2>/dev/null; then
+            log_info "  Removed GTag extension files"
+        else
+            log_warn "  Could not remove GTag extension files — remove manually: $gtag_dir"
+        fi
     fi
 
     local post_init="${data_dir}/${wiki_name}/post-init-settings.php"
@@ -483,8 +487,12 @@ remove_oauth() {
     for ext in PluggableAuth OpenIDConnect; do
         local ext_dir="${data_dir}/${wiki_name}/extensions/${ext}"
         if [[ -d "$ext_dir" ]]; then
-            rm -rf "$ext_dir"
-            log_info "  Removed ${ext} extension files"
+            if docker_exec_safe "$wiki_name" "rm -rf /data/bluespice/extensions/${ext}" 2>/dev/null \
+                    || rm -rf "$ext_dir" 2>/dev/null; then
+                log_info "  Removed ${ext} extension files"
+            else
+                log_warn "  Could not remove ${ext} extension files — remove manually: $ext_dir"
+            fi
         fi
     done
 
@@ -502,8 +510,12 @@ remove_semantic() {
     for ext in SemanticMediaWiki SemanticExtraSpecialProperties; do
         local ext_dir="${data_dir}/${wiki_name}/extensions/${ext}"
         if [[ -d "$ext_dir" ]]; then
-            rm -rf "$ext_dir"
-            log_info "  Removed ${ext} extension files"
+            if docker_exec_safe "$wiki_name" "rm -rf /data/bluespice/extensions/${ext}" 2>/dev/null \
+                    || rm -rf "$ext_dir" 2>/dev/null; then
+                log_info "  Removed ${ext} extension files"
+            else
+                log_warn "  Could not remove ${ext} extension files — remove manually: $ext_dir"
+            fi
         fi
     done
 
