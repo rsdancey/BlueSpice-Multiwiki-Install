@@ -36,6 +36,7 @@ SMTP_HOST=""
 SMTP_PORT="587"
 SMTP_USER=""
 SMTP_PASS=""
+INSTALL_OAUTH=false
 INSTALL_SEMANTIC=false
 
 # Source modular libraries with error checking
@@ -48,6 +49,21 @@ for lib in validation config docker-utils oauth-config gtag-config semantic-exte
     # shellcheck disable=SC1090
     source "$lib_path"
 done
+
+# Prompt for a yes/no answer. Prints "true" or "false" to stdout.
+ask_yes_no() {
+    local prompt="$1"
+    local answer
+    while true; do
+        printf "%s [y/n]: " "$prompt"
+        read -r answer
+        case "$answer" in
+            [Yy]) echo "true";  return 0 ;;
+            [Nn]) echo "false"; return 0 ;;
+            *)    echo "Please answer y or n." >&2 ;;
+        esac
+    done
+}
 
 # Help function
 show_help() {
@@ -110,7 +126,7 @@ POST-INSTALLATION:
 MANAGEMENT COMMANDS:
     Start wiki:     ./bluespice-deploy-wiki --wiki-name=NAME --fresh-install
     Stop wiki:      docker compose -f /core/wikis/NAME/docker-compose.main.yml down
-    Upgrade wiki:   ./upgrade-bluespice --wiki NAME
+    Upgrade wiki:   ./upgrade-bluespice
     Test email:     docker exec bluespice-NAME-wiki-web php /app/bluespice/w/maintenance/sendTestEmail.php --to=email@domain.com
 
 EXAMPLES:
@@ -268,16 +284,19 @@ deploy_wiki_instance() {
         return 1
     fi
 
-    # Install and configure OAuth extensions using the new modular system
-    log_info "Setting up OAuth extensions..."
-    if ! setup_oauth_extensions "$WIKI_NAME" "$wiki_dir" "$WIKI_DOMAIN"; then
-        log_error "CRITICAL: OAuth extension setup failed"
-        log_warn "Wiki is functional but OAuth authentication will not work"
-        log_warn "Manual intervention may be required"
-        return 1
+    # Install OAuth extensions if requested
+    if [[ "${INSTALL_OAUTH:-false}" == "true" ]]; then
+        log_info "Setting up OAuth extensions..."
+        if ! setup_oauth_extensions "$WIKI_NAME" "$wiki_dir" "$WIKI_DOMAIN"; then
+            log_error "CRITICAL: OAuth extension setup failed"
+            log_warn "Wiki is functional but OAuth authentication will not work"
+            log_warn "Manual intervention may be required"
+            return 1
+        fi
+        log_info "OAuth extension setup completed successfully"
+    else
+        log_info "Skipping OAuth extensions (not requested)"
     fi
-    
-    log_info "OAuth extension setup completed successfully"
 
     # Install and configure GTag extension (only if user opted in)
     if [[ -n "${GTAG_ANALYTICS_ID:-}" ]]; then
@@ -459,7 +478,7 @@ show_completion_info() {
     echo "Management commands:"
     echo "  Start:   ./bluespice-deploy-wiki --wiki-name=$WIKI_NAME --fresh-install"
     echo "  Stop:    docker compose -f /core/wikis/$WIKI_NAME/docker-compose.main.yml down"
-    echo "  Upgrade: ./upgrade-bluespice --wiki $WIKI_NAME"
+    echo "  Upgrade: ./upgrade-bluespice"
     echo
     
     return 0
@@ -567,33 +586,6 @@ main() {
             validate_smtp_pass "$SMTP_PASS" || SMTP_PASS=""
         done
 
-        # Google Analytics GTag
-        echo ""
-        printf "Install Google Analytics (GTag) extension? [y/N]: "
-        read -r install_gtag_choice
-        if [[ "$install_gtag_choice" =~ ^[Yy]$ ]]; then
-            echo ""
-            echo "📊 Google Analytics Configuration:"
-            echo "Configure Google Analytics tracking for your wiki"
-            echo ""
-            prompt_gtag_analytics_id
-        else
-            GTAG_ANALYTICS_ID=""
-            log_info "Skipping GTag extension"
-        fi
-
-        # SemanticMediaWiki + SemanticExtraSpecialProperties
-        echo ""
-        printf "Install SemanticMediaWiki and SemanticExtraSpecialProperties extensions? [y/N]: "
-        read -r install_semantic_choice
-        if [[ "$install_semantic_choice" =~ ^[Yy]$ ]]; then
-            INSTALL_SEMANTIC=true
-            log_info "SemanticMediaWiki and SemanticExtraSpecialProperties will be installed"
-        else
-            INSTALL_SEMANTIC=false
-            log_info "Skipping Semantic extensions"
-        fi
-
     else
         log_info "Loading existing configuration..."
         # Load existing configuration from .env file
@@ -614,32 +606,22 @@ main() {
             log_warn "You will need to configure the wiki manually"
         fi
 
-        # Google Analytics GTag
-        echo ""
-        printf "Install Google Analytics (GTag) extension? [y/N]: "
-        read -r install_gtag_choice
-        if [[ "$install_gtag_choice" =~ ^[Yy]$ ]]; then
-            echo ""
-            echo "📊 Google Analytics Configuration:"
-            echo "Configure Google Analytics tracking for your wiki"
-            echo ""
-            prompt_gtag_analytics_id
-        else
-            GTAG_ANALYTICS_ID=""
-            log_info "Skipping GTag extension"
-        fi
+    fi
 
-        # SemanticMediaWiki + SemanticExtraSpecialProperties
+    # Extension options — collected once for both new and existing-directory paths
+    echo ""
+    echo "Extension options:"
+    local want_gtag
+    INSTALL_OAUTH=$(   ask_yes_no "Install OAuth (Google login) support?")
+    want_gtag=$(       ask_yes_no "Install Google Analytics (GTag) support?")
+    INSTALL_SEMANTIC=$(ask_yes_no "Install Semantic Web (SemanticMediaWiki + SESP) support?")
+
+    if [[ "$want_gtag" == "true" ]]; then
         echo ""
-        printf "Install SemanticMediaWiki and SemanticExtraSpecialProperties extensions? [y/N]: "
-        read -r install_semantic_choice
-        if [[ "$install_semantic_choice" =~ ^[Yy]$ ]]; then
-            INSTALL_SEMANTIC=true
-            log_info "SemanticMediaWiki and SemanticExtraSpecialProperties will be installed"
-        else
-            INSTALL_SEMANTIC=false
-            log_info "Skipping Semantic extensions"
-        fi
+        echo "📊 Google Analytics Configuration:"
+        prompt_gtag_analytics_id
+    else
+        GTAG_ANALYTICS_ID=""
     fi
 
     # Get setup mode
