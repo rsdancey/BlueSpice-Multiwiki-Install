@@ -170,6 +170,11 @@ save_configuration() {
     local wiki_version
     wiki_version=$("$SCRIPT_DIR/lib/get-latest-bluespice-version.sh")
 
+    # Single-quote SMTP_PASS in the .env so the file stays sourceable even when
+    # the password contains shell-special characters (e.g. [], (), $). Escape any
+    # embedded single quotes using the standard '\'' sequence.
+    local smtp_pass_escaped=${SMTP_PASS//\'/\'\\\'\'}
+
     # Create environment file with all configuration
     cat > "$env_file" << EOF
 # BlueSpice Wiki Configuration
@@ -232,7 +237,7 @@ ENABLE_IPV6=true
 SMTP_HOST=$SMTP_HOST
 SMTP_PORT=$SMTP_PORT
 SMTP_USER=$SMTP_USER
-SMTP_PASS=$SMTP_PASS
+SMTP_PASS='$smtp_pass_escaped'
 SMTP_ID_HOST=$WIKI_DOMAIN
 
 # Proxy Configuration

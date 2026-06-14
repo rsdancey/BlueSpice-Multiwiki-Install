@@ -78,15 +78,28 @@ create_post_init_settings() {
         smtp_host=$(grep "^SMTP_HOST=" "$env_file" | cut -d= -f2 || echo "mail.google.com")
         smtp_port=$(grep "^SMTP_PORT=" "$env_file" | cut -d= -f2 || echo "587")
         smtp_user=$(grep "^SMTP_USER=" "$env_file" | cut -d= -f2 || echo "alderacwiki@alderac.com")
-        smtp_pass=$(grep "^SMTP_PASS=" "$env_file" | cut -d= -f2 || echo "")
+        # SMTP_PASS is single-quoted in the .env (it may contain shell-special
+        # characters), so read it from the already-sourced environment rather
+        # than re-parsing the quoted line.
+        smtp_pass="${SMTP_PASS:-}"
         wiki_host=$(grep "^WIKI_HOST=" "$env_file" | cut -d= -f2 || echo "wiki.alderac.com")
         
         # Substitute placeholders in post-init-settings.php
         sed -i "s/{{SMTP_HOST}}/$smtp_host/g" "$post_init_file"
         sed -i "s/{{SMTP_PORT}}/$smtp_port/g" "$post_init_file"
         sed -i "s/{{SMTP_USER}}/$smtp_user/g" "$post_init_file"
-        sed -i "s/{{SMTP_PASS}}/$smtp_pass/g" "$post_init_file"
         sed -i "s/{{WIKI_HOST}}/$wiki_host/g" "$post_init_file"
+
+        # SMTP_PASS can contain characters that are special to sed (/, &, \) or
+        # to PHP single-quoted strings (', \). Escape for the PHP '...' context
+        # (\ -> \\, ' -> \'), then substitute via a literal bash replacement so
+        # no value character is interpreted as a regex or sed metacharacter.
+        local smtp_pass_php=${smtp_pass//\\/\\\\}
+        smtp_pass_php=${smtp_pass_php//\'/\\\'}
+        local post_init_content
+        post_init_content=$(cat "$post_init_file")
+        post_init_content=${post_init_content//'{{SMTP_PASS}}'/$smtp_pass_php}
+        printf '%s\n' "$post_init_content" > "$post_init_file"
 
         gtag_analytics_id=$(grep "^GTAG_ANALYTICS_ID=" "$env_file" | cut -d= -f2 || echo "")
         sed -i "s/{{GTAG_ANALYTICS_ID}}/$gtag_analytics_id/g" "$post_init_file"
