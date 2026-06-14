@@ -20,6 +20,8 @@ The script is fully interactive. It will:
    - Semantic Web (SemanticMediaWiki + SESP)
 4. Perform the upgrade, installing or actively removing each extension as requested
 
+It also repairs a missing or placeholder `LETSENCRYPT_EMAIL` in the wiki's `.env` (a real address is required for Let's Encrypt to issue/renew the wiki's certificate).
+
 ---
 
 ## Before You Start
@@ -88,7 +90,7 @@ docker pull bluespice/wiki:VERSION
 ```
 
 ### 3. Update `.env`
-Backs up the current `.env` to `$BACKUP_DIR`, then updates `VERSION` and `BLUESPICE_WIKI_IMAGE`. Also adds `DB_TYPE`, `CACHE_HOST`, and `CACHE_PORT` if missing.
+Backs up the current `.env` to `$BACKUP_DIR`, then updates `VERSION` and `BLUESPICE_WIKI_IMAGE`. Also adds `DB_TYPE`, `CACHE_HOST`, and `CACHE_PORT` if missing. If `LETSENCRYPT_EMAIL` is missing or a placeholder, it is repaired from `ADMIN_MAIL` (then `SMTP_USER`) so Let's Encrypt can renew the certificate; if no real address is found, a warning is printed and you must set it manually.
 
 ### 4. Pre-create log directories
 Creates `preupdate/` and `postupdate/` directories under `/bluespice/WIKI_NAME/logs/` before the container starts. The BlueSpice `run-updates` pipeline writes logs here; if they don't exist, it crashes.
@@ -252,6 +254,18 @@ docker exec --user root bluespice-WIKI_NAME-wiki-web \
 OAuth extensions are mounted from `/bluespice/WIKI_NAME/extensions/` via the volume mounts in `docker-compose.main.yml`. If the host volume copy is missing or outdated, re-run `./upgrade-bluespice`, select the affected wiki, answer `y` to OAuth, and `y` when asked whether to proceed despite already being on the target version.
 
 Alternatively, reinstall manually by calling `install_auth_extensions` from the `oauth-config.sh` library.
+
+### Wiki certificate expired / not renewing (Cloudflare 526)
+
+acme-companion (`bluespice-letsencrypt-service`) only issues/renews a host's certificate when its container declares a real `LETSENCRYPT_EMAIL`. With no email it falls back to `DEFAULT_EMAIL` (the unchanged `somuser@somedomain.tld` placeholder), and issuance silently never completes — the cert eventually expires and, behind Cloudflare Full (strict), returns **526**.
+
+Fix by re-running `./upgrade-bluespice` for the affected wiki (it repairs `LETSENCRYPT_EMAIL` in `.env` and passes it through the compose file, then the container recreate makes acme-companion adopt and renew the cert). Verify:
+
+```bash
+# wiki's EMAIL should be non-empty, and the wiki host should be listed:
+docker exec bluespice-letsencrypt-service cat /app/letsencrypt_service_data | grep -i email
+docker exec bluespice-letsencrypt-service /app/cert_status
+```
 
 ### Check what version is actually running
 

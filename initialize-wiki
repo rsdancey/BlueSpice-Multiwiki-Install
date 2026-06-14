@@ -107,6 +107,7 @@ DATABASE CONNECTIVITY:
 
 SSL CERTIFICATES:
     • Automatic Let's Encrypt certificate generation and renewal
+      (registered using the SMTP email address, required for renewal)
     • Certificate expiry monitoring (warns when <30 days remaining)
     • HTTPS redirection and security headers
     • Domain validation and DNS checking

@@ -76,7 +76,7 @@ The interactive wizard prompts for:
 - Wiki name (identifier, e.g. `mywiki`)
 - Domain name (e.g. `mywiki.example.com`)
 - Language
-- SMTP settings for outbound email
+- SMTP settings for outbound email (the SMTP username/email is also used as the Let's Encrypt registration address, so the wiki's certificate auto-renews)
 - Whether to install **OAuth / Google login** (PluggableAuth + OpenIDConnect extensions)
 - Whether to install **Google Analytics** (GTag extension; prompts for your tracking ID if yes)
 - Whether to install **Semantic Web** support (SemanticMediaWiki + SESP extensions)
