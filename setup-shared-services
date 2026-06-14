@@ -139,27 +139,46 @@ initialize_database() {
         return 1
     fi
     
-    # Initialize root user passwords for all hosts
+    # Set the root password on every host variant so password-based connections
+    # (used by bluespice-deploy-wiki) work. The image leaves root@localhost
+    # password-less, so connect without a password on a fresh DB and fall back
+    # to the stored password on an already-configured one.
     echo "Setting up root user passwords for all hosts..."
-    if docker exec bluespice-database mariadb -u root -e "
--- Set password for all existing root users
-SET PASSWORD FOR 'root'@'localhost' = '$DB_ROOT_PASS';
-SET PASSWORD FOR 'root'@'127.0.0.1' = '$DB_ROOT_PASS';
-SET PASSWORD FOR 'root'@'::1' = '$DB_ROOT_PASS';
--- Update any other root users to have the password
-ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASS';
-ALTER USER IF EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '$DB_ROOT_PASS';
-ALTER USER IF EXISTS 'root'@'::1' IDENTIFIED BY '$DB_ROOT_PASS';
--- Create/update network root users
+
+    local auth_args
+    if docker exec bluespice-database mariadb -uroot -e "SELECT 1;" >/dev/null 2>&1; then
+        auth_args=(-uroot)
+    else
+        auth_args=(-uroot -p"$DB_ROOT_PASS")
+    fi
+
+    # Use CREATE ... IF NOT EXISTS + ALTER USER (idempotent) instead of
+    # SET PASSWORD, which aborts the whole batch if an account doesn't exist yet.
+    local sql_output
+    if ! sql_output=$(docker exec -i bluespice-database mariadb "${auth_args[@]}" 2>&1 <<SQL
+CREATE USER IF NOT EXISTS 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASS';
+ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_ROOT_PASS';
+CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '$DB_ROOT_PASS';
+ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY '$DB_ROOT_PASS';
+CREATE USER IF NOT EXISTS 'root'@'::1' IDENTIFIED BY '$DB_ROOT_PASS';
+ALTER USER 'root'@'::1' IDENTIFIED BY '$DB_ROOT_PASS';
 CREATE USER IF NOT EXISTS 'root'@'%.bluespice-network' IDENTIFIED BY '$DB_ROOT_PASS';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%.bluespice-network' WITH GRANT OPTION;
-FLUSH PRIVILEGES;" 2>/dev/null; then
-        echo -e "${GREEN}✓ Database network permissions configured${NC}"
-    
+FLUSH PRIVILEGES;
+SQL
+    ); then
+        echo -e "${RED}❌ Failed to configure root passwords:${NC}" >&2
+        echo "$sql_output" >&2
+        return 1
+    fi
+
+    # Verify password auth works the same way bluespice-deploy-wiki tests it.
+    if docker exec bluespice-database mariadb -uroot -p"$DB_ROOT_PASS" -e "SELECT 1;" >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Database root password configured${NC}"
         return 0
     else
-        echo -e "${YELLOW}⚠ Database permissions may already be configured${NC}"
-        return 0
+        echo -e "${RED}❌ Root password verification failed${NC}" >&2
+        return 1
     fi
 }
 
