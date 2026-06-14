@@ -46,6 +46,7 @@ services:
       - VIRTUAL_HOST=${VIRTUAL_HOST}
       - VIRTUAL_PORT=${VIRTUAL_PORT}
       - LETSENCRYPT_HOST=${LETSENCRYPT_HOST}
+      - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
       - WIKI_HOST=${WIKI_HOST}
       - WIKI_PROTOCOL=https
       - WIKI_PORT=443
@@ -129,6 +130,7 @@ services:
       - VIRTUAL_PORT=3333
       - VIRTUAL_DEST=/
       - LETSENCRYPT_HOST=${LETSENCRYPT_HOST}
+      - LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
     <<: *common-config
     labels:
       com.bluespice.service: "wire"

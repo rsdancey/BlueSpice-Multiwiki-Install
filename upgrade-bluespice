@@ -603,6 +603,7 @@ upgrade_wiki() {
     ensure_compose_env_var "$compose_file" "CACHE_PORT"                   "11211"
     ensure_compose_env_var "$compose_file" "DB_TYPE"                      "mysql"
     ensure_compose_env_var "$compose_file" "INTERNAL_WIRE_API_KEY"        "\${INTERNAL_WIRE_API_KEY}"
+    ensure_compose_env_var "$compose_file" "LETSENCRYPT_EMAIL"            "\${LETSENCRYPT_EMAIL}"
 
     # --- Step 1b: Ensure INTERNAL_WIKI_* secrets exist ---
     log_info "  Verifying INTERNAL_WIKI_* secrets..."
@@ -645,6 +646,36 @@ upgrade_wiki() {
     grep -q "^CACHE_HOST=" "$env_file" || echo "CACHE_HOST=bluespice-cache" >> "$env_file"
     grep -q "^CACHE_PORT=" "$env_file" || echo "CACHE_PORT=11211"           >> "$env_file"
     log_info "  Updated .env to version $target_version"
+
+    # --- Step 3b: Repair LETSENCRYPT_EMAIL ---
+    # A missing or placeholder LETSENCRYPT_EMAIL makes acme-companion fall back to
+    # its DEFAULT_EMAIL (often the unchanged placeholder), which silently breaks
+    # cert issuance/renewal for this wiki. Derive a real address from the .env.
+    local le_email
+    le_email=$(read_env_var "$env_file" "LETSENCRYPT_EMAIL")
+    if [[ -z "$le_email" || "$le_email" == *"somedomain.tld"* || "$le_email" == *"_PLACEHOLDER" ]]; then
+        local real_email admin_mail smtp_user
+        admin_mail=$(read_env_var "$env_file" "ADMIN_MAIL")
+        smtp_user=$(read_env_var "$env_file" "SMTP_USER")
+        real_email=""
+        if [[ -n "$admin_mail" && "$admin_mail" != *"somedomain.tld"* && "$admin_mail" != *"_PLACEHOLDER" ]]; then
+            real_email="$admin_mail"
+        elif [[ -n "$smtp_user" && "$smtp_user" != *"somedomain.tld"* && "$smtp_user" != *"_PLACEHOLDER" ]]; then
+            real_email="$smtp_user"
+        fi
+        if [[ -n "$real_email" ]]; then
+            if grep -q "^LETSENCRYPT_EMAIL=" "$env_file"; then
+                sed -i "s|^LETSENCRYPT_EMAIL=.*|LETSENCRYPT_EMAIL=${real_email}|" "$env_file"
+            else
+                echo "LETSENCRYPT_EMAIL=${real_email}" >> "$env_file"
+            fi
+            log_info "  Set LETSENCRYPT_EMAIL=${real_email} (enables cert auto-renewal)"
+        else
+            log_warn "  LETSENCRYPT_EMAIL is unset/placeholder and no real ADMIN_MAIL/SMTP_USER found."
+            log_warn "  Cert auto-renewal will not work until you set a real LETSENCRYPT_EMAIL in:"
+            log_warn "    $env_file"
+        fi
+    fi
 
     # --- Step 4: Pre-create log directories ---
     local log_base="${data_dir}/${wiki_name}/logs"
