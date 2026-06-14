@@ -220,7 +220,7 @@ docker exec -i bluespice-database \
 
 1. The secret exists in `/core/wikis/WIKI_NAME/.env`
 2. The `docker-compose.main.yml` passes it via the environment section
-3. The startup wrapper scripts at `/opt/bluespice/scripts/` call `init-envs` before restoring OAuth extensions
+3. The startup wrapper scripts at `/opt/bluespice/scripts/` call `init-envs` and source `/app/.env`
 
 Re-run `./upgrade-bluespice`, select the affected wiki, and answer `y` when asked whether to proceed despite already being on the target version. This regenerates missing secrets and re-runs all upgrade steps.
 
@@ -249,7 +249,7 @@ docker exec --user root bluespice-WIKI_NAME-wiki-web \
 
 ### OAuth login broken after upgrade
 
-The startup wrapper scripts restore OAuth extensions from `/bluespice/WIKI_NAME/extensions/`. If the host volume copy is missing or outdated, re-run `./upgrade-bluespice`, select the affected wiki, answer `y` to OAuth, and `y` when asked whether to proceed despite already being on the target version.
+OAuth extensions are mounted from `/bluespice/WIKI_NAME/extensions/` via the volume mounts in `docker-compose.main.yml`. If the host volume copy is missing or outdated, re-run `./upgrade-bluespice`, select the affected wiki, answer `y` to OAuth, and `y` when asked whether to proceed despite already being on the target version.
 
 Alternatively, reinstall manually by calling `install_auth_extensions` from the `oauth-config.sh` library.
 
@@ -272,9 +272,10 @@ docker exec bluespice-WIKI_NAME-wiki-web \
 
 - `/app` inside the container is **ephemeral** — it is reset to the image contents on every `docker compose up --force-recreate`
 - `/data/bluespice/` (container) = `/bluespice/WIKI_NAME/` (host) — this is the **persistent** volume
-- The entrypoint wrapper scripts at `/opt/bluespice/scripts/` override the official entrypoint and must:
+- The entrypoint wrapper scripts at `/opt/bluespice/scripts/` (shipped in the repo under `scripts/`, installed by `bluespice-deploy-wiki`) override the official entrypoint and:
   1. Call `init-envs` to populate `/app/.env` with secrets
   2. Source `/app/.env` to export the secrets into the shell environment
-  3. Restore OAuth extensions from persistent storage
+  3. Run `substitutePlaceholders` and `init-datadirectory` to prepare config and data
   4. Exec the original `start-web` or `start-task` script
+- OAuth extensions are restored from persistent storage via the volume mounts in `docker-compose.main.yml`, not by the wrapper scripts
 - BlueSpice 5.2.x `LocalSettings.php` is at `/app/conf/LocalSettings.php` and is fully environment-variable driven

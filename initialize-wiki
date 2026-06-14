@@ -55,7 +55,7 @@ ask_yes_no() {
     local prompt="$1"
     local answer
     while true; do
-        printf "%s [y/n]: " "$prompt"
+        printf "%s [y/n]: " "$prompt" >&2
         read -r answer
         case "$answer" in
             [Yy]) echo "true";  return 0 ;;

@@ -166,8 +166,12 @@ Container path: `/data/bluespice/pre-init-settings.php`
 `/app` inside the container is **ephemeral** — it is reset to the image contents on every container recreate (i.e. on every upgrade). The entrypoint wrapper scripts at `/opt/bluespice/scripts/` override the official entrypoint and:
 
 1. Call `init-envs` and source `/app/.env` to populate secrets into the environment
-2. Restore OAuth extensions from `/data/bluespice/extensions/` into `/app/bluespice/w/extensions/`
+2. Run `substitutePlaceholders` and `init-datadirectory` to prepare config and data
 3. Exec the original `start-web` or `start-task` script
+
+The scripts are shipped in the repo under `scripts/` and installed to `/opt/bluespice/scripts/` by `bluespice-deploy-wiki` before the containers start.
+
+OAuth, GTag, and Semantic extensions are restored separately via direct volume mounts in `docker-compose.main.yml` (from `/bluespice/WIKI_NAME/extensions/`), not by the wrapper scripts.
 
 ### Secrets
 
@@ -183,7 +187,7 @@ Generated automatically by `initialize-wiki`. If missing, the wiki UI displays r
 
 ### OAuth / Google login
 
-`PluggableAuth` and `OpenIDConnect` are installed to `/bluespice/WIKI_NAME/extensions/` and restored into the container on each start by the wrapper scripts.
+`PluggableAuth` and `OpenIDConnect` are installed to `/bluespice/WIKI_NAME/extensions/` and mounted into the container on each start via the volume mounts in `docker-compose.main.yml`.
 
 OAuth client credentials are configured via BlueSpice's ConfigManager UI and stored in the wiki database — not in the `.env` file.
 

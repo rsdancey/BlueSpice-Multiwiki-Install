@@ -374,8 +374,34 @@ run_bluespice_install() {
     log_info "BlueSpice installation completed"
 }
 
+# Install container entrypoint wrapper scripts to /opt/bluespice/scripts.
+# These are bind-mounted read-only into the wiki containers as /scripts and
+# act as their entrypoint, so they must be present before any container starts.
+install_wrapper_scripts() {
+    local src_dir="${SCRIPT_DIR}/scripts"
+    local dest_dir="/opt/bluespice/scripts"
+
+    if [[ ! -f "${src_dir}/start-web-wrapper.sh" || ! -f "${src_dir}/start-task-wrapper.sh" ]]; then
+        log_error "Wrapper scripts not found in ${src_dir}"
+        return 1
+    fi
+
+    if [[ ! -d "$dest_dir" ]]; then
+        sudo mkdir -p "$dest_dir" 2>/dev/null || mkdir -p "$dest_dir"
+    fi
+    sudo cp "${src_dir}/start-web-wrapper.sh" "${src_dir}/start-task-wrapper.sh" "$dest_dir/" 2>/dev/null \
+        || cp "${src_dir}/start-web-wrapper.sh" "${src_dir}/start-task-wrapper.sh" "$dest_dir/"
+    sudo chmod 0755 "${dest_dir}/start-web-wrapper.sh" "${dest_dir}/start-task-wrapper.sh" 2>/dev/null \
+        || chmod 0755 "${dest_dir}/start-web-wrapper.sh" "${dest_dir}/start-task-wrapper.sh"
+
+    log_info "Installed container wrapper scripts to ${dest_dir}"
+}
+
 # Main deployment function
 deploy_wiki() {
+    # Ensure the container entrypoint scripts exist before starting containers
+    install_wrapper_scripts
+
     if [[ "$FRESH_INSTALL" == "true" ]]; then
         log_info "Performing fresh installation..."
         
