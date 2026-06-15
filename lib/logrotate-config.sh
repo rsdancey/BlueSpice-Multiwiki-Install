@@ -39,6 +39,7 @@ create_wiki_logrotate_config() {
   tmp=$(mktemp)
   cat >"$tmp" <<EOF_INNER
 ${logs_glob} {
+    su root root
     daily
     rotate 14
     size 50M
