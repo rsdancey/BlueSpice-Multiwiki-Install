@@ -18,7 +18,7 @@ SHARED_DIR="${SCRIPT_DIR}/shared"
 BACKUP_DIR="/tmp/bluespice-upgrade-$(date +%Y%m%d-%H%M%S)"
 
 # Source libraries, then immediately reset any strict mode they may have set
-for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh semantic-extensions-config.sh upstream-check.sh logrotate-config.sh; do
+for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh semantic-extensions-config.sh upstream-check.sh logrotate-config.sh ssl-cert.sh; do
     lib_path="${SCRIPT_DIR}/lib/${lib}"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -674,6 +674,36 @@ upgrade_wiki() {
             log_warn "  LETSENCRYPT_EMAIL is unset/placeholder and no real ADMIN_MAIL/SMTP_USER found."
             log_warn "  Cert auto-renewal will not work until you set a real LETSENCRYPT_EMAIL in:"
             log_warn "    $env_file"
+        fi
+    fi
+
+    # --- Step 3c: Self-signed cert for non-public domains ---
+    # Let's Encrypt cannot validate reserved/internal TLDs (.local, .internal,
+    # .lan, .test, ...), so HTTPS silently fails on these wikis. Generate a
+    # self-signed cert and remove LETSENCRYPT_HOST so acme-companion stops
+    # retrying (and won't clobber the self-signed cert), and disable HSTS so
+    # browsers can accept the self-signed certificate.
+    local wiki_host
+    wiki_host=$(read_env_var "$env_file" "VIRTUAL_HOST")
+    [[ -z "$wiki_host" ]] && wiki_host=$(read_env_var "$env_file" "WIKI_HOST")
+    if [[ -n "$wiki_host" ]] && is_nonpublic_domain "$wiki_host"; then
+        local certs_dir="${data_dir:-/bluespice}/proxy/certs"
+        if [[ -f "${certs_dir}/${wiki_host}.crt" ]]; then
+            log_info "  Self-signed certificate already present for $wiki_host"
+        else
+            log_info "  '$wiki_host' is non-public; generating self-signed certificate"
+            if ! generate_self_signed_cert "$wiki_host" "$certs_dir"; then
+                log_warn "  Failed to generate self-signed certificate for $wiki_host"
+            fi
+        fi
+        if grep -q "^LETSENCRYPT_HOST=" "$env_file"; then
+            sed -i "/^LETSENCRYPT_HOST=/d" "$env_file"
+            log_info "  Removed LETSENCRYPT_HOST from .env (non-public domain)"
+        fi
+        if grep -q "^ENABLE_HSTS=" "$env_file"; then
+            sed -i "s|^ENABLE_HSTS=.*|ENABLE_HSTS=false|" "$env_file"
+        else
+            echo "ENABLE_HSTS=false" >> "$env_file"
         fi
     fi
 

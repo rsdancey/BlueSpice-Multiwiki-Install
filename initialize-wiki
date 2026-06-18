@@ -465,7 +465,13 @@ show_completion_info() {
     
     if [[ "$SETUP_MODE" == "ssl" ]] || [[ "$SSL_ENABLED" == "true" ]]; then
         echo "  URL: https://$WIKI_DOMAIN"
-        echo "  SSL: Enabled"
+        if is_nonpublic_domain "$WIKI_DOMAIN"; then
+            echo "  SSL: Enabled (self-signed — '$WIKI_DOMAIN' is not publicly resolvable)"
+            echo "       Browsers will warn until you trust the certificate at:"
+            echo "       ${DATA_DIR}/proxy/certs/${WIKI_DOMAIN}.crt"
+        else
+            echo "  SSL: Enabled"
+        fi
     else
         echo "  URL: http://$WIKI_DOMAIN"
         echo "  SSL: Disabled"
@@ -725,6 +731,17 @@ main() {
         exit 1
     fi
     
+    # For non-public domains, Let's Encrypt cannot issue a certificate, so
+    # generate a self-signed one now — before deploy, so nginx-proxy picks it up
+    # when the wiki container registers its vhost.
+    if [[ "$SSL_ENABLED" == "true" ]] && is_nonpublic_domain "$WIKI_DOMAIN"; then
+        log_warn "'$WIKI_DOMAIN' is not publicly resolvable; Let's Encrypt cannot issue a certificate."
+        log_info "Generating a self-signed certificate instead."
+        if ! generate_self_signed_cert "$WIKI_DOMAIN" "${DATA_DIR}/proxy/certs"; then
+            log_error "Failed to generate self-signed certificate; HTTPS may not work."
+        fi
+    fi
+
     # Deploy wiki
     if ! deploy_wiki_instance; then
         log_error "Wiki deployment failed"
