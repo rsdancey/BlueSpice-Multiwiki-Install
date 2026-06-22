@@ -124,7 +124,7 @@ Extensions the user answered **yes** to are installed (or reinstalled if already
 |---|---|
 | **OAuth** | Downloads and installs PluggableAuth + OpenIDConnect; runs Composer for OpenIDConnect dependencies |
 | **GTag** | Downloads and installs the GTag extension; prompts for the analytics ID if not already in `.env`; writes the config block to `post-init-settings.php` |
-| **Semantic** | Downloads SemanticMediaWiki + SESP via Composer; runs `update.php` and `setupStore.php`; writes the SMW/SESP config block to `post-init-settings.php`; rebuilds semantic data |
+| **Semantic** | Downloads SemanticMediaWiki (`^7.0.0`) + SESP (`^5.0.0`) via Composer; runs `update.php` and `setupStore.php`; writes the SMW/SESP config block to `post-init-settings.php`; rebuilds semantic data |
 
 ### 9. Bump wgCacheEpoch
 Updates the `$wgCacheEpoch` timestamp in `post-init-settings.php` to bust stale browser and server caches.

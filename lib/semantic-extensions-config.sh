@@ -46,11 +46,16 @@ _smw_ensure_composer() {
 #     wiki_name  – wiki instance name
 #     pkg_name   – Composer package name  (e.g. mediawiki/semantic-media-wiki)
 #     ext_name   – Extension dir name     (e.g. SemanticMediaWiki)
+#     version    – Composer version constraint (e.g. ^7.0.0). Pin to a major
+#                  line so a future incompatible major (needing a newer
+#                  MediaWiki than the BlueSpice image ships) is not silently
+#                  pulled in by --ignore-platform-reqs.
 # ---------------------------------------------------------------------------
 _install_composer_extension() {
     local wiki_name="$1"
     local pkg_name="$2"
     local ext_name="$3"
+    local version="$4"
 
     local temp_proj="/tmp/mw_${ext_name}_$$"
     local ext_dest="/data/bluespice/extensions/${ext_name}"
@@ -65,7 +70,7 @@ _install_composer_extension() {
     cat > "$host_json" << COMPJSON
 {
     "require": {
-        "${pkg_name}": "*"
+        "${pkg_name}": "${version}"
     },
     "minimum-stability": "stable",
     "prefer-stable": true
@@ -174,19 +179,24 @@ install_semantic_extensions() {
     fi
 
     # Install SemanticMediaWiki.
+    # Pin to the 7.x line: SMW 7 supports MediaWiki 1.43–1.46 / PHP 8.1–8.5,
+    # matching BlueSpice 5.1 (MediaWiki 1.43 LTS / PHP 8.3).
     if ! _install_composer_extension \
             "$wiki_name" \
             "mediawiki/semantic-media-wiki" \
-            "SemanticMediaWiki"; then
+            "SemanticMediaWiki" \
+            "^7.0.0"; then
         log_error "❌ Failed to install SemanticMediaWiki"
         return 1
     fi
 
     # Install SemanticExtraSpecialProperties.
+    # SESP 5.x is the companion line for SMW 7 (requires SMW 7.0).
     if ! _install_composer_extension \
             "$wiki_name" \
             "mediawiki/semantic-extra-special-properties" \
-            "SemanticExtraSpecialProperties"; then
+            "SemanticExtraSpecialProperties" \
+            "^5.0.0"; then
         log_error "❌ Failed to install SemanticExtraSpecialProperties"
         return 1
     fi
