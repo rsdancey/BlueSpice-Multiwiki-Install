@@ -9,8 +9,8 @@ check_auth_extensions_needed() {
     local wiki_name="$1"
     
     # Check if extensions already exist
-    if docker_exec_safe "$wiki_name" test -d /app/bluespice/w/extensions/PluggableAuth 2>/dev/null && \
-       docker_exec_safe "$wiki_name" test -d /app/bluespice/w/extensions/OpenIDConnect 2>/dev/null; then
+    if docker_exec_safe "$wiki_name" "test -d /app/bluespice/w/extensions/PluggableAuth" 2>/dev/null && \
+       docker_exec_safe "$wiki_name" "test -d /app/bluespice/w/extensions/OpenIDConnect" 2>/dev/null; then
         log_info "✓ Authentication extensions already installed"
         return 1
     fi
@@ -130,12 +130,12 @@ install_auth_extensions() {
     
     # Copy extensions to container
     # Also persist durable copies under /data/bluespice/extensions (host volume)
-    docker_exec_safe "$wiki_name" mkdir -p /data/bluespice/extensions >/dev/null 2>&1 || true
-    docker_exec_safe "$wiki_name" rm -rf /data/bluespice/extensions/PluggableAuth /data/bluespice/extensions/OpenIDConnect >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "mkdir -p /data/bluespice/extensions" >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "rm -rf /data/bluespice/extensions/PluggableAuth /data/bluespice/extensions/OpenIDConnect" >/dev/null 2>&1 || true
     if ! docker_copy_to_container "$wiki_name" "$temp_dir/PluggableAuth" "/data/bluespice/extensions/"; then log_warn "⚠️ Failed to copy PluggableAuth to persistent /data; continuing"; fi
     if ! docker_copy_to_container "$wiki_name" "$temp_dir/OpenIDConnect" "/data/bluespice/extensions/"; then log_warn "⚠️ Failed to copy OpenIDConnect to persistent /data; continuing"; fi
-    docker_exec_safe "$wiki_name" chown -R bluespice:bluespice /data/bluespice/extensions >/dev/null 2>&1 || true
-    docker_exec_safe "$wiki_name" chmod -R g+rwX /data/bluespice/extensions >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "chown -R bluespice:bluespice /data/bluespice/extensions" >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "chmod -R g+rwX /data/bluespice/extensions" >/dev/null 2>&1 || true
 
     # Install Composer to persistent storage if not already present.
     # Installing here (not to /app) ensures composer.phar survives container recreation.
@@ -165,7 +165,7 @@ install_auth_extensions() {
     log_info "  ✓ OpenIDConnect dependencies installed"
 
     # Fix ownership on persistent extensions now that vendor/ has been written
-    docker_exec_safe "$wiki_name" chown -R bluespice:bluespice /data/bluespice/extensions >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "chown -R bluespice:bluespice /data/bluespice/extensions" >/dev/null 2>&1 || true
 
     # Extensions are available at /app via docker-compose volume mounts:
     #   /data/bluespice/extensions/PluggableAuth  -> /app/bluespice/w/extensions/PluggableAuth

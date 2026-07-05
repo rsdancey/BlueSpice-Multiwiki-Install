@@ -59,8 +59,8 @@ prompt_gtag_analytics_id() {
 check_gtag_extension_needed() {
     local wiki_name="$1"
 
-    if docker_exec_safe "$wiki_name" test -d /app/bluespice/w/extensions/GTag 2>/dev/null && \
-       docker_exec_safe "$wiki_name" test -f /app/bluespice/w/extensions/GTag/extension.json 2>/dev/null; then
+    if docker_exec_safe "$wiki_name" "test -d /app/bluespice/w/extensions/GTag" 2>/dev/null && \
+       docker_exec_safe "$wiki_name" "test -f /app/bluespice/w/extensions/GTag/extension.json" 2>/dev/null; then
         log_info "✓ GTag extension already installed"
         return 1
     fi
@@ -139,15 +139,15 @@ install_gtag_extension() {
     log_info "  ✓ GTag extracted and prepared"
 
     # Copy to persistent storage in container
-    docker_exec_safe "$wiki_name" mkdir -p /data/bluespice/extensions >/dev/null 2>&1 || true
-    docker_exec_safe "$wiki_name" rm -rf /data/bluespice/extensions/GTag >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "mkdir -p /data/bluespice/extensions" >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "rm -rf /data/bluespice/extensions/GTag" >/dev/null 2>&1 || true
     if ! docker_copy_to_container "$wiki_name" "$temp_dir/GTag" "/data/bluespice/extensions/"; then
         log_error "  ❌ Failed to copy GTag to persistent /data"
         rm -rf "$temp_dir"
         return 1
     fi
-    docker_exec_safe "$wiki_name" chown -R bluespice:bluespice /data/bluespice/extensions/GTag >/dev/null 2>&1 || true
-    docker_exec_safe "$wiki_name" chmod -R g+rwX /data/bluespice/extensions/GTag >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "chown -R bluespice:bluespice /data/bluespice/extensions/GTag" >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "chmod -R g+rwX /data/bluespice/extensions/GTag" >/dev/null 2>&1 || true
 
     # GTag is available at /app via docker-compose volume mount:
     #   /data/bluespice/extensions/GTag -> /app/bluespice/w/extensions/GTag

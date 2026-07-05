@@ -47,6 +47,20 @@ $GLOBALS['bsgOverridePermissionManagerAllowedPresets'] = [ 'public', 'protected'
 # parser cache here significantly reduces page load times (especially for
 # large pages) at no extra cost.
 $GLOBALS['wgParserCacheType'] = CACHE_MEMCACHED;
+
+# ============================================
+# On-demand thumbnail generation (private wiki)
+# ============================================
+# These wikis are private: uploads are served through img_auth.php. img_auth.php
+# only streams thumbnails that already exist on disk and returns HTTP 403 for any
+# that don't, which shows up as broken images in UIs that request a thumbnail URL
+# directly without first generating it (the FlexiSkin logo configurator and the
+# File "Preview" tab). Routing thumbnail URLs through thumb.php makes MediaWiki
+# generate them on demand, while thumb.php still enforces the wiki read permission
+# (anonymous requests for private images are denied). Full-size originals continue
+# to be served through img_auth.php.
+$GLOBALS['wgThumbnailScriptPath'] = $GLOBALS['wgScriptPath'] . '/thumb.php';
+
 # BlueSpice Extended Search Backend Configuration
 $GLOBALS["bsgESBackendHost"] = "bluespice-search";                                                                                    
 $GLOBALS["bsgESBackendPort"] = "9200";                                                                                                
