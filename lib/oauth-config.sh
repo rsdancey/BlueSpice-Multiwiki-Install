@@ -130,10 +130,20 @@ install_auth_extensions() {
     
     # Copy extensions to container
     # Also persist durable copies under /data/bluespice/extensions (host volume)
-    docker_exec_safe "$wiki_name" "mkdir -p /data/bluespice/extensions" >/dev/null 2>&1 || true
-    docker_exec_safe "$wiki_name" "rm -rf /data/bluespice/extensions/PluggableAuth /data/bluespice/extensions/OpenIDConnect" >/dev/null 2>&1 || true
-    if ! docker_copy_to_container "$wiki_name" "$temp_dir/PluggableAuth" "/data/bluespice/extensions/"; then log_warn "⚠️ Failed to copy PluggableAuth to persistent /data; continuing"; fi
-    if ! docker_copy_to_container "$wiki_name" "$temp_dir/OpenIDConnect" "/data/bluespice/extensions/"; then log_warn "⚠️ Failed to copy OpenIDConnect to persistent /data; continuing"; fi
+    # Replace the extension directories IN PLACE — do NOT rm -rf the directory
+    # itself. docker-compose bind-mounts each ${DATA_DIR}/${WIKI_NAME}/extensions/<Ext>
+    # onto /app/bluespice/w/extensions/<Ext>, capturing the directory's inode at
+    # container start. Deleting and recreating the directory gives it a new inode,
+    # so the bind mount is left pointing at a stale, empty directory and the
+    # extension's files (extension.json) become invisible under /app — the
+    # extension then silently fails to load. Emptying the contents with
+    # `find -mindepth 1 -delete` and copying the new files in with `docker cp <src>/.`
+    # preserves the inode and keeps the mount valid.
+    docker_exec_safe "$wiki_name" "mkdir -p /data/bluespice/extensions/PluggableAuth /data/bluespice/extensions/OpenIDConnect" >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "find /data/bluespice/extensions/PluggableAuth -mindepth 1 -delete" >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "find /data/bluespice/extensions/OpenIDConnect -mindepth 1 -delete" >/dev/null 2>&1 || true
+    if ! docker_copy_to_container "$wiki_name" "$temp_dir/PluggableAuth/." "/data/bluespice/extensions/PluggableAuth/"; then log_warn "⚠️ Failed to copy PluggableAuth to persistent /data; continuing"; fi
+    if ! docker_copy_to_container "$wiki_name" "$temp_dir/OpenIDConnect/." "/data/bluespice/extensions/OpenIDConnect/"; then log_warn "⚠️ Failed to copy OpenIDConnect to persistent /data; continuing"; fi
     docker_exec_safe "$wiki_name" "chown -R bluespice:bluespice /data/bluespice/extensions" >/dev/null 2>&1 || true
     docker_exec_safe "$wiki_name" "chmod -R g+rwX /data/bluespice/extensions" >/dev/null 2>&1 || true
 

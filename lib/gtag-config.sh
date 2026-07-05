@@ -139,9 +139,13 @@ install_gtag_extension() {
     log_info "  ✓ GTag extracted and prepared"
 
     # Copy to persistent storage in container
-    docker_exec_safe "$wiki_name" "mkdir -p /data/bluespice/extensions" >/dev/null 2>&1 || true
-    docker_exec_safe "$wiki_name" "rm -rf /data/bluespice/extensions/GTag" >/dev/null 2>&1 || true
-    if ! docker_copy_to_container "$wiki_name" "$temp_dir/GTag" "/data/bluespice/extensions/"; then
+    # Replace the GTag directory IN PLACE (preserve its inode) — see the detailed
+    # note in oauth-config.sh: the directory is bind-mounted onto
+    # /app/bluespice/w/extensions/GTag at container start, so rm -rf + recreate
+    # would strand the mount on a stale inode and the extension would fail to load.
+    docker_exec_safe "$wiki_name" "mkdir -p /data/bluespice/extensions/GTag" >/dev/null 2>&1 || true
+    docker_exec_safe "$wiki_name" "find /data/bluespice/extensions/GTag -mindepth 1 -delete" >/dev/null 2>&1 || true
+    if ! docker_copy_to_container "$wiki_name" "$temp_dir/GTag/." "/data/bluespice/extensions/GTag/"; then
         log_error "  ❌ Failed to copy GTag to persistent /data"
         rm -rf "$temp_dir"
         return 1
