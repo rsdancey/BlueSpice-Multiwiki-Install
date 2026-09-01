@@ -431,7 +431,7 @@ deploy_wiki() {
             # broken Authentication tab is caught here and not months later when
             # someone first configures OAuth. Non-fatal — the wiki is installed.
             log_info "Verifying ConfigManager widget patches..."
-            verify_configmanager_patches "$WIKI_NAME"
+            verify_configmanager_patches "$WIKI_NAME" || true
         else
             log_error "Wiki deployment failed - container did not become healthy"
             exit 1

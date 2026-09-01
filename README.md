@@ -187,13 +187,21 @@ Because `/app` is reset from the image on every container create, fixes to BlueS
 
 Each patch is idempotent and never fatal. If BlueSpice fixes one upstream the search text stops matching and the script logs a `SKIP` line instead of failing — check `docker logs` for `patch-bluespice:` after a version bump and drop patches that are no longer needed.
 
-### Verifying the patches (`tests/configmanager-widget-harness.js`)
+### Verifying the patches (`tests/`)
 
-A `SKIP` line only proves a patch did not apply; it cannot prove the result behaves. `verify_configmanager_patches()` in `lib/verify-patches.sh` closes that gap: it pulls the live widget sources out of a running wiki container and exercises them under Node against a minimal stub of the `OO.ui`/jQuery surface they touch, asserting that editing a saved entry arms Save while the add-new form stays silent.
+A `SKIP` line only proves a patch did not apply; it cannot prove the result behaves. A patch that applies cleanly can still be defeated by upstream restructuring the code around it. `verify_configmanager_patches()` in `lib/verify-patches.sh` closes that gap with one harness per patch group. Each pulls the live sources out of the running wiki container — so it sees exactly what the entrypoint left in `/app` — and exercises them:
+
+| Harness | Covers | Runs under |
+|---|---|---|
+| `tests/configmanager-keyobject-harness.php` | `KeyObjectInputWidget.php` — each JSON sub-field carries its own value, not the whole entry | `php`, inside the wiki container |
+| `tests/configmanager-panel-harness.js` | `ConfigManager.js` — the selected tab survives a store reload, and is stored as a name | `node` |
+| `tests/configmanager-widget-harness.js` | the three OOUI widgets — editing a saved entry arms Save while the add-new form stays silent | `node` |
+
+The PHP harness drives the real `getValueInput()` through reflection under the wiki's own maintenance runner. The JS harnesses evaluate the real sources against a minimal stub of the `OO.ui`/jQuery surface they touch, using the genuine `oojs.js` from the image.
 
 It runs automatically at the end of a wiki upgrade (Step 14) and after a fresh install. Both treat it as non-fatal — a failure is reported loudly but does not roll anything back.
 
-The wiki image ships no `node`, so the harness executes in a sibling container that has one (`bluespice-WIKI_NAME-wire`, falling back to `bluespice-formula`). If neither has `node` the check is skipped with a warning rather than failing.
+The wiki image ships no `node`, so the two JS harnesses run elsewhere: any running container that has one (in practice `bluespice-formula`), otherwise a throwaway `docker run --rm` container from a local image that does. The PHP harness needs only the wiki container, so it runs even when there is no `node` anywhere. A check that cannot run is reported as an **error** — `NOT VERIFIED` — so an unverified upgrade is never mistaken for a verified one.
 
 To run it by hand:
 
@@ -203,7 +211,7 @@ SCRIPT_DIR=/core/core_install bash -c '
   verify_configmanager_patches WIKI_NAME'
 ```
 
-Exit status is 0 on pass, 1 on a real failure, 2 if the check could not run.
+Exit status is 0 when everything ran and passed, 1 if any check failed, 2 if any check could not run.
 
 OAuth, GTag, and Semantic extensions are restored separately via direct volume mounts in `docker-compose.main.yml` (from `/bluespice/WIKI_NAME/extensions/`), not by the wrapper scripts.
 
