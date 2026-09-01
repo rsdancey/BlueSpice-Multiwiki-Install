@@ -134,6 +134,7 @@ cat /bluespice/WIKI_NAME/initialAdminPassword
   scripts/               # Container entrypoint wrapper scripts
     start-web-wrapper.sh
     start-task-wrapper.sh
+    patch-bluespice.sh
 ```
 
 ### Containers
@@ -167,9 +168,22 @@ Container path: `/data/bluespice/pre-init-settings.php`
 
 1. Call `init-envs` and source `/app/.env` to populate secrets into the environment
 2. Run `substitutePlaceholders` and `init-datadirectory` to prepare config and data
-3. Exec the original `start-web` or `start-task` script
+3. Run `patch-bluespice.sh` to re-apply local fixes to files under `/app`
+4. Exec the original `start-web` or `start-task` script
 
-The scripts are shipped in the repo under `scripts/` and installed to `/opt/bluespice/scripts/` by `bluespice-deploy-wiki` before the containers start.
+The scripts are shipped in the repo under `scripts/` and installed to `/opt/bluespice/scripts/` by `install_wrapper_scripts()` (`lib/wrapper-scripts.sh`), which both `bluespice-deploy-wiki` and `upgrade-bluespice` call before the containers start.
+
+### Patching BlueSpice (`patch-bluespice.sh`)
+
+Because `/app` is reset from the image on every container create, fixes to BlueSpice's own extension files cannot be made once — they have to be re-applied at each container start. `scripts/patch-bluespice.sh` does this, and currently carries five fixes to the ConfigManager Authentication tab:
+
+| Fix | File | Problem |
+|---|---|---|
+| `KeyObjectInputWidget` JSON sub-field encoding | `BlueSpiceFoundation/src/Html/OOUI/KeyObjectInputWidget.php` | `getValueInput()` re-encoded the whole entry into every JSON sub-field, so reopening the tab showed "Data object (JSON)" holding the entire entry and "Group sync settings (JSON)" holding that again, nested. Saving from that form wrote the corruption back and wiped the OAuth config. |
+| ConfigManager selected-tab restore | `BlueSpiceConfigManager/resources/ui/panel/ConfigManager.js` | The booklet stores the selected page *name* but compared it against ConfigPage *objects*, so every reload fell through to the first tab. After saving you landed on Administration instead of the tab you were editing, making a successful save look like it had done nothing. |
+| `change` propagation (3 patches) | `BlueSpiceFoundation/resources/bluespice.oojs/ui/widget/{JsonArrayInputWidget,ObjectInputWidget,KeyValueInputWidget}.js` | `KeyValueInputWidget` emitted `change` only from `onAddClick()`/`onDeleteClick()`, and nothing subscribed to the inputs of an entry that already existed. Editing a saved OAuth config was invisible to the form, so Save stayed greyed out and the entry had to be deleted and re-added. The three patches reconnect the chain: inner text widget -> `JsonArrayInputWidget` -> `ObjectInputWidget` -> `KeyValueInputWidget`. Only rows added with `addToWidgets` are connected, so typing in the "Add new entry" form still does not arm Save before the check button commits it. |
+
+Each patch is idempotent and never fatal. If BlueSpice fixes one upstream the search text stops matching and the script logs a `SKIP` line instead of failing — check `docker logs` for `patch-bluespice:` after a version bump and drop patches that are no longer needed.
 
 OAuth, GTag, and Semantic extensions are restored separately via direct volume mounts in `docker-compose.main.yml` (from `/bluespice/WIKI_NAME/extensions/`), not by the wrapper scripts.
 

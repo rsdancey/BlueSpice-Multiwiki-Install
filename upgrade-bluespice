@@ -18,7 +18,7 @@ SHARED_DIR="${SCRIPT_DIR}/shared"
 BACKUP_DIR="/tmp/bluespice-upgrade-$(date +%Y%m%d-%H%M%S)"
 
 # Source libraries, then immediately reset any strict mode they may have set
-for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh semantic-extensions-config.sh upstream-check.sh logrotate-config.sh ssl-cert.sh; do
+for lib in logging.sh docker-utils.sh oauth-config.sh gtag-config.sh semantic-extensions-config.sh upstream-check.sh logrotate-config.sh ssl-cert.sh wrapper-scripts.sh; do
     lib_path="${SCRIPT_DIR}/lib/${lib}"
     if [[ ! -f "$lib_path" ]]; then
         echo "Error: Required library not found: $lib_path" >&2
@@ -730,6 +730,16 @@ upgrade_wiki() {
         log_info "  Repaired logrotate config (added su directive)"
     else
         log_warn "  Could not repair logrotate config — check /etc/logrotate.d/bluespice-${wiki_name}"
+    fi
+
+    # --- Step 4c: Refresh container entrypoint wrapper scripts ---
+    # The containers are about to be recreated from the new image, which resets
+    # /app. The wrappers (and the patch script they invoke) live on the host and
+    # are bind-mounted in, so they must be current before the containers start.
+    if install_wrapper_scripts; then
+        log_info "  Refreshed container entrypoint wrapper scripts"
+    else
+        log_warn "  Could not refresh wrapper scripts in /opt/bluespice/scripts"
     fi
 
     local container_name

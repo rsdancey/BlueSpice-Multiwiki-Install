@@ -286,10 +286,12 @@ docker exec bluespice-WIKI_NAME-wiki-web \
 
 - `/app` inside the container is **ephemeral** — it is reset to the image contents on every `docker compose up --force-recreate`
 - `/data/bluespice/` (container) = `/bluespice/WIKI_NAME/` (host) — this is the **persistent** volume
-- The entrypoint wrapper scripts at `/opt/bluespice/scripts/` (shipped in the repo under `scripts/`, installed by `bluespice-deploy-wiki`) override the official entrypoint and:
+- The entrypoint wrapper scripts at `/opt/bluespice/scripts/` (shipped in the repo under `scripts/`, installed by `install_wrapper_scripts()` in `lib/wrapper-scripts.sh`, which both `bluespice-deploy-wiki` and this script call) override the official entrypoint and:
   1. Call `init-envs` to populate `/app/.env` with secrets
   2. Source `/app/.env` to export the secrets into the shell environment
   3. Run `substitutePlaceholders` and `init-datadirectory` to prepare config and data
-  4. Exec the original `start-web` or `start-task` script
+  4. Run `patch-bluespice.sh` to re-apply local fixes to files under `/app`
+  5. Exec the original `start-web` or `start-task` script
+- Because `/app` is ephemeral, fixes to BlueSpice's own extension files must be re-applied on every container start — that is what `patch-bluespice.sh` is for. It is refreshed on the host in Step 4c, before the containers are recreated. Each patch is idempotent and never fatal; after a version bump check `docker logs bluespice-WIKI_NAME-wiki-web | grep patch-bluespice` and drop any patch reported as `SKIP` because upstream has fixed it. See the README for the current patch list.
 - OAuth extensions are restored from persistent storage via the volume mounts in `docker-compose.main.yml`, not by the wrapper scripts
 - BlueSpice 5.2.x `LocalSettings.php` is at `/app/conf/LocalSettings.php` and is fully environment-variable driven
