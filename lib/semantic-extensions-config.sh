@@ -96,7 +96,7 @@ COMPJSON
         cd '${temp_proj}' &&
         php '${composer}' install \
             --prefer-dist --no-dev --ignore-platform-reqs \
-            --no-plugins --no-scripts --no-interaction 2>&1
+            --no-plugins --no-scripts --no-interaction --no-security-blocking 2>&1
     "; then
         log_error "  ❌ Composer install (download) failed for ${ext_name}"
         docker_exec_safe "$wiki_name" "rm -rf '${temp_proj}'" 2>/dev/null || true
@@ -138,7 +138,7 @@ COMPJSON
         cd '${ext_dest}' &&
         php '${composer}' install \
             --no-dev --ignore-platform-reqs \
-            --no-plugins --no-scripts --no-interaction 2>&1
+            --no-plugins --no-scripts --no-interaction --no-security-blocking 2>&1
     "; then
         log_error "  ❌ Composer standalone install failed for ${ext_name}"
         return 1
