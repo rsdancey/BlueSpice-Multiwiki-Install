@@ -292,6 +292,7 @@ docker exec bluespice-WIKI_NAME-wiki-web \
   3. Run `substitutePlaceholders` and `init-datadirectory` to prepare config and data
   4. Run `patch-bluespice.sh` to re-apply local fixes to files under `/app`
   5. Exec the original `start-web` or `start-task` script
+- After the containers are back up, Step 14 runs `verify_configmanager_patches()` (`lib/verify-patches.sh`), which exercises the patched widget sources under Node to confirm the Authentication tab still saves correctly. It is non-fatal: a failure is reported but the upgrade is not rolled back. See the README for how to run it by hand.
 - Because `/app` is ephemeral, fixes to BlueSpice's own extension files must be re-applied on every container start — that is what `patch-bluespice.sh` is for. It is refreshed on the host in Step 4c, before the containers are recreated. Each patch is idempotent and never fatal; after a version bump check `docker logs bluespice-WIKI_NAME-wiki-web | grep patch-bluespice` and drop any patch reported as `SKIP` because upstream has fixed it. See the README for the current patch list.
 - OAuth extensions are restored from persistent storage via the volume mounts in `docker-compose.main.yml`, not by the wrapper scripts
 - BlueSpice 5.2.x `LocalSettings.php` is at `/app/conf/LocalSettings.php` and is fully environment-variable driven

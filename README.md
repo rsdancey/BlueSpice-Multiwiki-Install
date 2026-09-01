@@ -185,6 +185,24 @@ Because `/app` is reset from the image on every container create, fixes to BlueS
 
 Each patch is idempotent and never fatal. If BlueSpice fixes one upstream the search text stops matching and the script logs a `SKIP` line instead of failing — check `docker logs` for `patch-bluespice:` after a version bump and drop patches that are no longer needed.
 
+### Verifying the patches (`tests/configmanager-widget-harness.js`)
+
+A `SKIP` line only proves a patch did not apply; it cannot prove the result behaves. `verify_configmanager_patches()` in `lib/verify-patches.sh` closes that gap: it pulls the live widget sources out of a running wiki container and exercises them under Node against a minimal stub of the `OO.ui`/jQuery surface they touch, asserting that editing a saved entry arms Save while the add-new form stays silent.
+
+It runs automatically at the end of a wiki upgrade (Step 14) and after a fresh install. Both treat it as non-fatal — a failure is reported loudly but does not roll anything back.
+
+The wiki image ships no `node`, so the harness executes in a sibling container that has one (`bluespice-WIKI_NAME-wire`, falling back to `bluespice-formula`). If neither has `node` the check is skipped with a warning rather than failing.
+
+To run it by hand:
+
+```bash
+SCRIPT_DIR=/core/core_install bash -c '
+  source lib/logging.sh; source lib/verify-patches.sh
+  verify_configmanager_patches WIKI_NAME'
+```
+
+Exit status is 0 on pass, 1 on a real failure, 2 if the check could not run.
+
 OAuth, GTag, and Semantic extensions are restored separately via direct volume mounts in `docker-compose.main.yml` (from `/bluespice/WIKI_NAME/extensions/`), not by the wrapper scripts.
 
 ### Secrets

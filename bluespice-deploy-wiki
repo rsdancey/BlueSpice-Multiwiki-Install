@@ -18,6 +18,9 @@ source "${SCRIPT_DIR}/lib/docker-utils.sh"
 # Source container wrapper script installer
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/wrapper-scripts.sh"
+# Source patch verification
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/verify-patches.sh"
 
 # Help function
 show_help() {
@@ -423,6 +426,12 @@ deploy_wiki() {
 
             # Ensure temp directory exists in task container as well
             docker exec --user root "${CONTAINER_PREFIX}-wiki-task" sh -c "mkdir -p /tmp/wiki && chown bluespice:bluespice /tmp/wiki && chmod 1777 /tmp/wiki"
+
+            # Confirm the entrypoint's BlueSpice patches actually behave, so a
+            # broken Authentication tab is caught here and not months later when
+            # someone first configures OAuth. Non-fatal — the wiki is installed.
+            log_info "Verifying ConfigManager widget patches..."
+            verify_configmanager_patches "$WIKI_NAME"
         else
             log_error "Wiki deployment failed - container did not become healthy"
             exit 1
