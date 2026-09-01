@@ -233,6 +233,66 @@ print(f"Added {added} volume mount(s)")
 PYEOF2
 }
 
+# Ensure a service's entrypoint is the wrapper that re-applies our patches.
+# /app is reset from the image on every container create, so patch-bluespice.sh
+# has to run from the entrypoint on every start. A compose file generated before
+# the wrappers existed still calls /app/bin/start-web directly, which leaves the
+# patch script bind-mounted in and never executed.
+ensure_compose_entrypoint() {
+    local compose_file="$1"
+    local service_name="$2"
+    local entrypoint="$3"
+
+    if grep -qF "entrypoint: [\"${entrypoint}\"]" "$compose_file"; then
+        return 0
+    fi
+
+    log_warn "    ${service_name} entrypoint is not ${entrypoint} — fixing..."
+
+    python3 - "$compose_file" "$service_name" "$entrypoint" << 'PYEOF3'
+import re, sys
+
+compose_file, service_name, entrypoint = sys.argv[1], sys.argv[2], sys.argv[3]
+entry_line = f'    entrypoint: ["{entrypoint}"]\n'
+
+with open(compose_file) as f:
+    lines = f.readlines()
+
+start = None
+for i, line in enumerate(lines):
+    if re.match(r'^  ' + re.escape(service_name) + r':\s*$', line):
+        start = i
+        break
+
+if start is None:
+    print(f'WARNING: service {service_name} not found', file=sys.stderr)
+    sys.exit(1)
+
+# The block runs until the next line that is neither blank nor indented into it.
+end = len(lines)
+for i in range(start + 1, len(lines)):
+    if lines[i].strip() and not lines[i].startswith('    '):
+        end = i
+        break
+
+for i in range(start + 1, end):
+    if re.match(r'^    entrypoint:', lines[i]):
+        lines[i] = entry_line
+        break
+else:
+    lines.insert(start + 1, entry_line)
+
+with open(compose_file, 'w') as f:
+    f.writelines(lines)
+
+print(f'Set {service_name} entrypoint to {entrypoint}')
+PYEOF3
+    # shellcheck disable=SC2181
+    if [[ $? -ne 0 ]]; then
+        log_warn "    Could not set ${service_name} entrypoint — please set it manually in ${compose_file}"
+    fi
+}
+
 # Ensure a tmpfs entry appears in a service block of a docker-compose file.
 ensure_compose_tmpfs() {
     local compose_file="$1"
@@ -633,6 +693,16 @@ upgrade_wiki() {
     mkdir -p "${data_dir}/${wiki_name}/simplesamlphp" 2>/dev/null || true
     chown 1002:1002 "${data_dir}/${wiki_name}/simplesamlphp" 2>/dev/null || true
     ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/simplesamlphp" "/data/simplesamlphp"
+
+    # --- Step 1c3: Ensure the patch-applying entrypoint is wired up ---
+    # Step 4c refreshes the wrapper scripts on the host, but a compose file
+    # generated before the wrappers existed still points straight at
+    # /app/bin/start-web, so patch-bluespice.sh would never be executed and the
+    # fixes it applies to /app would silently stop being applied.
+    log_info "  Verifying container entrypoint wrappers..."
+    ensure_compose_volume_mount "$compose_file" "/opt/bluespice/scripts" "/scripts:ro"
+    ensure_compose_entrypoint   "$compose_file" "wiki-web"  "/scripts/start-web-wrapper.sh"
+    ensure_compose_entrypoint   "$compose_file" "wiki-task" "/scripts/start-task-wrapper.sh"
 
     # --- Step 1d: Ensure tmpfs mounts ---
     log_info "  Verifying tmpfs mounts..."

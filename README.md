@@ -173,6 +173,8 @@ Container path: `/data/bluespice/pre-init-settings.php`
 
 The scripts are shipped in the repo under `scripts/` and installed to `/opt/bluespice/scripts/` by `install_wrapper_scripts()` (`lib/wrapper-scripts.sh`), which both `bluespice-deploy-wiki` and `upgrade-bluespice` call before the containers start.
 
+Installing the scripts is not enough on its own: the wiki's `docker-compose.main.yml` also has to set `entrypoint` to them and bind-mount `/opt/bluespice/scripts` as `/scripts:ro`. New wikis get both from `wiki-template/`; a wiki whose compose file predates the wrappers is repaired by `upgrade-bluespice` in Step 1c3, before the containers are recreated. Without that repair the scripts sit on the host and are never executed.
+
 ### Patching BlueSpice (`patch-bluespice.sh`)
 
 Because `/app` is reset from the image on every container create, fixes to BlueSpice's own extension files cannot be made once — they have to be re-applied at each container start. `scripts/patch-bluespice.sh` does this, and currently carries five fixes to the ConfigManager Authentication tab:
