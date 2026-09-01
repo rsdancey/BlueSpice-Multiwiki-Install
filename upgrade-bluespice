@@ -625,6 +625,15 @@ upgrade_wiki() {
     ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/SemanticMediaWiki"             "/app/bluespice/w/extensions/SemanticMediaWiki"
     ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/extensions/SemanticExtraSpecialProperties" "/app/bluespice/w/extensions/SemanticExtraSpecialProperties"
 
+    # --- Step 1c2: Ensure simplesamlphp mount exists ---
+    # The image's init-datadirectory creates /data/simplesamlphp/{cache,certs,data,logs}
+    # as uid 1002, but /data itself is root-owned, so without this bind mount the
+    # mkdir fails and the container crash-loops before ever becoming ready.
+    log_info "  Verifying simplesamlphp volume mount..."
+    mkdir -p "${data_dir}/${wiki_name}/simplesamlphp" 2>/dev/null || true
+    chown 1002:1002 "${data_dir}/${wiki_name}/simplesamlphp" 2>/dev/null || true
+    ensure_compose_volume_mount "$compose_file" "${data_dir}/${wiki_name}/simplesamlphp" "/data/simplesamlphp"
+
     # --- Step 1d: Ensure tmpfs mounts ---
     log_info "  Verifying tmpfs mounts..."
     ensure_compose_tmpfs "$compose_file" "/tmp/wiki:uid=1002,gid=1002" "wiki-web"

@@ -21,6 +21,10 @@ temp/
 ehthumbs.db
 Thumbs.db
 
+# Python bytecode cache
+__pycache__/
+*.pyc
+
 # IDE files
 .vscode/
 .idea/
